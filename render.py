@@ -128,7 +128,7 @@ def main():
         f"--height={render_h}",
     ]
 
-    result = subprocess.run(cmd, cwd=os.path.join(ROOT, "frontend"))
+    result = subprocess.run(cmd, cwd=os.path.join(ROOT, "frontend"), shell=(sys.platform == "win32"))
     if result.returncode == 0:
         print(f"\nDone! Video saved to: {output_path}")
     else:

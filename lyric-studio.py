@@ -185,7 +185,7 @@ def cmd_update(check_only=False, force_backup=False):
     ).stdout.strip()
     if pkg_changed:
         warn("Frontend dependencies changed - reinstalling...")
-        subprocess.run(["npm", "install"], cwd=os.path.join(ROOT, "frontend"))
+        subprocess.run(["npm", "install"], cwd=os.path.join(ROOT, "frontend"), shell=(sys.platform == "win32"))
 
     if not req_changed and not pkg_changed:
         ok("Dependencies unchanged.")
@@ -202,9 +202,10 @@ def cmd_update(check_only=False, force_backup=False):
         if os.path.exists(dist_dir):
             shutil.rmtree(dist_dir)
         r = subprocess.run(
-            ["npx", "vite", "build"],
+            ["npm", "run", "build"],
             cwd=os.path.join(ROOT, "frontend"),
             capture_output=True, text=True,
+            shell=(sys.platform == "win32"),
         )
         if r.returncode == 0:
             ok("Frontend rebuilt successfully.")
@@ -254,7 +255,7 @@ def cmd_start():
         try:
             ok("Frontend: http://localhost:3000")
             log("")
-            subprocess.run(["npm", "run", "dev"], cwd=os.path.join(ROOT, "frontend"))
+            subprocess.run(["npm", "run", "dev"], cwd=os.path.join(ROOT, "frontend"), shell=(sys.platform == "win32"))
         finally:
             backend.terminate()
             backend.wait()
