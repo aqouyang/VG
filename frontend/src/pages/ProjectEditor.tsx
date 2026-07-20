@@ -77,26 +77,22 @@ export default function ProjectEditor() {
 
   useEffect(() => { load(); }, [load]);
 
-  // ─── Audio events (subscribe ONCE, use refs for changing data) ───
+  // ─── Audio events ────────────────────────────────────────────────
+  // Must depend on audioUrl so it re-subscribes after the <audio>
+  // element appears (it's conditionally rendered).
+  const audioUrl = project?.audio_file ? `/static/projects/${name}/audio/${project.audio_file}` : null;
+
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
 
     const onTime = () => {
-      // CRITICAL: skip when user is dragging the slider
       if (isSeeking.current) return;
-
       const t = audio.currentTime;
-
-      // CRITICAL: prevent resets to 0 caused by audio element
-      // re-initialization or brief loading states.
-      // Only allow time=0 if we were already near 0.
+      // Reject resets to 0 from audio re-initialization
       if (t === 0 && lastTimeRef.current > 0.5) return;
-
       lastTimeRef.current = t;
       setTime(t);
-
-      // Find active line using ref (no dependency on lines state)
       const ll = linesRef.current;
       let a = -1;
       for (let i = ll.length - 1; i >= 0; i--) {
@@ -108,36 +104,23 @@ export default function ProjectEditor() {
     const onEnd = () => setPlaying(false);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+    const onCanPlay = () => {
+      if (lastTimeRef.current > 0) audio.currentTime = lastTimeRef.current;
+    };
 
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("ended", onEnd);
     audio.addEventListener("play", onPlay);
     audio.addEventListener("pause", onPause);
+    audio.addEventListener("canplay", onCanPlay);
     return () => {
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("ended", onEnd);
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
+      audio.removeEventListener("canplay", onCanPlay);
     };
-  // Empty deps: subscribe once. Uses refs for changing data.
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Re-attach listeners when audio element changes (new src)
-  const [audioReady, setAudioReady] = useState(0);
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    const onCanPlay = () => {
-      // Restore time after audio src change
-      if (lastTimeRef.current > 0) {
-        audio.currentTime = lastTimeRef.current;
-      }
-      setAudioReady(r => r + 1);
-    };
-    audio.addEventListener("canplay", onCanPlay);
-    return () => audio.removeEventListener("canplay", onCanPlay);
-  }, [project?.audio_file]);
+  }, [audioUrl]);
 
   // ─── Playback speed ──────────────────────────────────────────────
   useEffect(() => {
@@ -329,7 +312,6 @@ export default function ProjectEditor() {
     </div>
   );
 
-  const audioUrl = project.audio_file ? `/static/projects/${name}/audio/${project.audio_file}` : null;
   const coverUrl = project.cover_file ? `/static/projects/${name}/assets/${project.cover_file}` : null;
   const stamped = lines.filter(l => l.time >= 0).length;
   const stampedLines = lines.filter(l => l.time >= 0);
