@@ -535,10 +535,12 @@ def render_fast(
 
     t_enc_start = time.time()
     ffmpeg_output_lines = []
+    # Do NOT use shell=True. FFmpeg is a real executable, not a batch
+    # script. shell=True causes cmd.exe to mangle backslash escapes
+    # in the filter string (e.g. \: becomes just :).
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
-        **({"shell": True} if sys.platform == "win32" else {})
     )
 
     # Parse progress from the progress file, collect output for error reporting
