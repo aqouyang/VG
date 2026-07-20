@@ -326,6 +326,7 @@ export default function Dashboard() {
           {versionInfo.commit_date && (
             <span>Updated: {new Date(versionInfo.commit_date).toLocaleDateString()}</span>
           )}
+          <span>Published by A. Ouyang</span>
         </div>
       )}
     </div>

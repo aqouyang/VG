@@ -35,7 +35,7 @@ export default function ProjectEditor() {
 
 
   // ─── REFS ─────────────────────────────────────────────────────────
-  // The audio element ref is stable — never changes once set.
+  // The audio element ref is stable. It never changes once set.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -297,7 +297,7 @@ export default function ProjectEditor() {
     if (lines.some(l => l.time >= 0)) await api.saveLrc(name, lrcLinesToString(lines));
     try {
       await api.createJob(name);
-      toast("Export queued — see bottom panel", "ok");
+      toast("Export queued. See the export window for progress.", "ok");
     } catch (e: any) { toast("Export failed: " + e.message, "err"); }
   };
 
@@ -476,7 +476,7 @@ export default function ProjectEditor() {
             </div>
           </div>
 
-          {/* Audio bar — ALWAYS rendered so the ref stays stable */}
+          {/* Audio bar (always rendered so the ref stays stable) */}
           <div style={{ display: "flex", alignItems: "center", gap: SP.sm, padding: `${SP.sm}px ${SP.xl}px`, background: "#0c0c14", borderTop: "1px solid #1c1c28", flexShrink: 0, minHeight: 54 }}>
             {audioUrl ? (
               <>
@@ -501,7 +501,7 @@ export default function ProjectEditor() {
         </div>
 
         {/* ─── RIGHT PANEL ─── */}
-        <div style={{ width: 300, background: "#111118", borderLeft: "1px solid #1c1c28", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+        <div style={{ width: 280, minWidth: 240, maxWidth: 320, background: "#111118", borderLeft: "1px solid #1c1c28", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: `${SP.sm}px ${SP.lg}px`, borderBottom: "1px solid #1c1c28", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 600 }}>
             Visual Settings
           </div>
