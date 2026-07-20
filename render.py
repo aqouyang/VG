@@ -15,19 +15,25 @@ import shutil
 import subprocess
 import sys
 
+ROOT = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.join(ROOT, "backend"))
+
+from config import PROJECTS_DIR, EXPORTS_DIR, ensure_data_dirs
+
 
 def main():
     if len(sys.argv) < 2:
         print("Usage: python render.py <project_name>")
         sys.exit(1)
 
+    ensure_data_dirs()
+
     project_name = sys.argv[1]
-    root = os.path.dirname(os.path.abspath(__file__))
-    project_dir = os.path.join(root, "projects", project_name)
+    project_dir = os.path.join(PROJECTS_DIR, project_name)
     project_json = os.path.join(project_dir, "project.json")
 
     if not os.path.exists(project_json):
-        print(f"Error: Project '{project_name}' not found")
+        print(f"Error: Project '{project_name}' not found at {project_dir}")
         sys.exit(1)
 
     with open(project_json) as f:
@@ -50,7 +56,7 @@ def main():
 
     lrc_lines = []
     for line in lrc_content.strip().split("\n"):
-        m = re.match(r"^\[(\d{2}):(\d{2}(?:\.\d+)?)\](.*)$", line)
+        m = re.match(r"^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\](.*)$", line)
         if m:
             t = int(m.group(1)) * 60 + float(m.group(2))
             lrc_lines.append({"time": t, "text": m.group(3)})
@@ -76,17 +82,14 @@ def main():
     if project.get("visual_config"):
         props["visualConfig"] = project["visual_config"]
 
-    props_path = os.path.join(root, "frontend", "render-props.json")
+    props_path = os.path.join(ROOT, "frontend", "render-props.json")
     with open(props_path, "w") as f:
         json.dump(props, f)
 
-    # Create exports directory
-    exports_dir = os.path.join(root, "exports")
-    os.makedirs(exports_dir, exist_ok=True)
-    output_path = os.path.join(exports_dir, f"{project_name}.mp4")
+    output_path = os.path.join(EXPORTS_DIR, f"{project_name}.mp4")
 
     # Copy project files to Remotion public directory for static file serving
-    public_dir = os.path.join(root, "frontend", "public", "projects", project_name)
+    public_dir = os.path.join(ROOT, "frontend", "public", "projects", project_name)
     os.makedirs(os.path.join(public_dir, "audio"), exist_ok=True)
     os.makedirs(os.path.join(public_dir, "assets"), exist_ok=True)
 
@@ -116,7 +119,7 @@ def main():
         f"--frames=0-{total_frames - 1}",
     ]
 
-    result = subprocess.run(cmd, cwd=os.path.join(root, "frontend"))
+    result = subprocess.run(cmd, cwd=os.path.join(ROOT, "frontend"))
     if result.returncode == 0:
         print(f"\nDone! Video saved to: {output_path}")
     else:

@@ -3,10 +3,9 @@ import json
 import subprocess
 import tempfile
 from fastapi import APIRouter, HTTPException
+from config import PROJECTS_DIR
 
 router = APIRouter()
-
-PROJECTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "projects")
 
 
 def get_project_path(name: str) -> str:

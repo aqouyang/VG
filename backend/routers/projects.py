@@ -5,10 +5,9 @@ import shutil
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional
+from config import PROJECTS_DIR
 
 router = APIRouter()
-
-PROJECTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "projects")
 
 
 class ProjectCreate(BaseModel):

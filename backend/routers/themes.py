@@ -3,12 +3,9 @@ import json
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Any
+from config import THEMES_DIR
 
 router = APIRouter()
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-THEMES_DIR = os.path.join(ROOT_DIR, "themes")
-os.makedirs(THEMES_DIR, exist_ok=True)
 
 
 class ThemeSave(BaseModel):

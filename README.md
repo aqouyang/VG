@@ -5,12 +5,13 @@ A local web application that generates cinematic lyric videos from audio, lyrics
 ## Features
 
 - **Project Management** - Create and manage song projects with dashboard UI
-- **Automatic Lyric Sync** - WhisperX/Whisper-based alignment with even-distribution fallback
-- **Lyric Editor** - Timeline-based editor with audio playback, click-to-seek, manual timestamp editing
+- **Tap-to-Timestamp Editor** - Play audio, tap lines to record timestamps in real time
+- **Smart Import** - Auto-detects LRC (with timestamps) vs plain text lyrics
 - **Video Preview** - Real-time preview that updates instantly as you adjust settings
 - **Visual Editor** - Full control over layout, typography, backgrounds, colors, and animations
 - **Theme System** - Built-in themes (Cinematic, Minimal, Classic) plus save/load custom themes
 - **MP4 Export** - Remotion-powered 1920x1080 30fps video rendering
+- **Safe Updates** - Git-based updates with automatic backup, never overwrites user data
 - **Multi-language** - English, French, Chinese, and mixed-language lyrics
 
 ## Requirements
@@ -18,115 +19,115 @@ A local web application that generates cinematic lyric videos from audio, lyrics
 - Python 3.9+
 - Node.js 18+
 - FFmpeg
-- (Optional) WhisperX or OpenAI Whisper for automatic alignment
+- Git (for updates)
 
 ## Quick Start (Windows)
 
-### Install
-
 ```powershell
-# Install Python dependencies
-cd backend
-python -m pip install -r requirements.txt
-cd ..
+# Install dependencies
+cd backend; python -m pip install -r requirements.txt; cd ..
+cd frontend; npm install; cd ..
 
-# Install frontend dependencies
-cd frontend
-npm install
-cd ..
-```
-
-### Run (single command)
-
-```powershell
+# Run (single command)
 powershell -ExecutionPolicy Bypass -File start.ps1
+
+# Or via CLI
+python lyric-studio.py start
 ```
-
-### Run (two terminals)
-
-```powershell
-# Terminal 1 - Backend
-cd backend
-python main.py
-
-# Terminal 2 - Frontend
-cd frontend
-npm run dev
-```
-
-Then open http://localhost:3000
 
 ## Quick Start (macOS / Linux)
 
 ```bash
-# Install all dependencies
-chmod +x install.sh
-./install.sh
+chmod +x install.sh && ./install.sh
 
-# Start backend (terminal 1)
-cd backend && python3 main.py
+# Start
+python3 lyric-studio.py start
 
-# Start frontend (terminal 2)
-cd frontend && npm run dev
-
-# Open http://localhost:3000
+# Or manually
+cd backend && python3 main.py   # terminal 1
+cd frontend && npm run dev      # terminal 2
 ```
+
+Then open http://localhost:3000
+
+## CLI Commands
+
+```
+python lyric-studio.py version              Show current version
+python lyric-studio.py start                Start backend + frontend
+python lyric-studio.py render <project>     Render project to MP4
+python lyric-studio.py update               Update application code
+python lyric-studio.py update --check       Check for updates only
+python lyric-studio.py update --backup      Force backup before update
+python lyric-studio.py backup               Create manual backup
+python lyric-studio.py migrate              Run schema migrations
+```
+
+## Data Separation
+
+User data is stored separately from application code:
+
+```
+VG/                         # Application code (updated via git)
+  backend/
+  frontend/
+  version.json
+
+VG/data/                    # User data (never touched by updates)
+  projects/
+    my_song/
+      audio/song.wav
+      lyrics/lyrics.txt
+      lyrics/lyrics.lrc
+      assets/cover.png
+      project.json
+  themes/
+    my_theme.json
+  exports/
+    my_song.mp4
+  settings/
+  backups/
+    backup_2026_07_20_05_51/
+```
+
+Set `LYRIC_STUDIO_DATA` environment variable to store data in a custom location.
+
+## Update System
+
+Updates only modify application code, never user data:
+
+```
+python lyric-studio.py update
+```
+
+1. Checks for new commits on origin/main
+2. Creates automatic backup of project metadata, lyrics, and themes
+3. Pulls application updates via git
+4. Runs schema migrations if needed
+5. Reinstalls dependencies if changed
+6. Rolls back automatically on failure
 
 ## Usage
 
-1. **Create a project** - Click "New Project" on the dashboard, enter song title and artist
-2. **Upload files** - Add audio (.wav/.mp3), lyrics (.txt), and cover image (.png/.jpg)
-3. **Generate timestamps** - Click "Generate Timestamps" to auto-sync lyrics to audio
-4. **Edit timing** - Switch to "Lyric Editor" tab to fine-tune timestamps manually
-5. **Customize visuals** - Use the Visual Settings panel on the right to adjust layout, fonts, colors, and background
-6. **Preview** - Switch to "Video Preview" tab and play audio to see the result in real time
-7. **Export** - Render to MP4
+1. **Create a project** - Click "New Project" on the dashboard
+2. **Upload files** - Add audio (.wav/.mp3), lyrics (.txt or .lrc), and cover image
+3. **Set timestamps** - Play audio, click lines or press Enter to stamp each line
+4. **Customize visuals** - Use the Visual Settings panel to adjust layout and style
+5. **Preview** - Switch to "Video Preview" tab to see the result in real time
+6. **Export** - Click "Export Video" then run the render command
 
-## Rendering
+### Keyboard Shortcuts (Timing Editor)
 
-```powershell
-# Windows
-python render.py <project_name>
-
-# macOS / Linux
-python3 render.py <project_name>
-
-# Output: exports/<project_name>.mp4
-```
-
-## Visual Customization
-
-All visual parameters are editable from the UI and saved per project:
-
-| Section | Controls |
-|---------|----------|
-| **Cover** | Position (left/center/right), size, offset, corner radius, shadow |
-| **Lyrics** | Position, width, font, size, spacing, active/inactive colors & opacity, scroll speed |
-| **Title** | Font, size, weight, color, position (below cover, corners, center) |
-| **Artist** | Font, size, weight, color, gap below title |
-| **Background** | Blurred cover / solid color / gradient, blur amount, brightness, overlay |
-
-Themes can be saved and reused across projects.
-
-## Project Structure
-
-```
-projects/<name>/
-  audio/song.wav
-  lyrics/lyrics.txt
-  lyrics/lyrics.lrc
-  assets/cover.png
-  project.json          # includes visual_config
-
-themes/
-  cinematic.json
-  minimal.json
-  custom_theme.json
-```
+| Key | Action |
+|-----|--------|
+| Space | Play / Pause |
+| Enter | Stamp focused line at current time |
+| Up / Down | Navigate lines |
+| Ctrl+Backspace | Clear timestamp |
 
 ## Tech Stack
 
 - **Frontend**: React, TypeScript, Remotion, Vite
 - **Backend**: Python FastAPI
-- **Audio Analysis**: soundfile, numpy, FFmpeg
-- **AI Alignment**: WhisperX (preferred), Whisper (fallback), even-distribution (default)
+- **Audio**: soundfile, numpy, FFmpeg
+- **CLI**: Python with git-based update system

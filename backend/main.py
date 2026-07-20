@@ -7,9 +7,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from config import PROJECTS_DIR, EXPORTS_DIR, ensure_data_dirs, get_app_version
 from routers import projects, alignment, waveform, themes
 
-app = FastAPI(title="Lyric Studio API", version="1.0.0")
+ensure_data_dirs()
+
+v = get_app_version()
+app = FastAPI(title="Lyric Studio API", version=v["version"])
 
 app.add_middleware(
     CORSMiddleware,
@@ -19,13 +23,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount project directories for static file serving
-PROJECTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "projects")
-EXPORTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "exports")
-
-os.makedirs(PROJECTS_DIR, exist_ok=True)
-os.makedirs(EXPORTS_DIR, exist_ok=True)
-
+# Mount data directories for static file serving
 app.mount("/static/projects", StaticFiles(directory=PROJECTS_DIR), name="projects_static")
 app.mount("/static/exports", StaticFiles(directory=EXPORTS_DIR), name="exports_static")
 
@@ -37,9 +35,13 @@ app.include_router(themes.router, prefix="/api/themes", tags=["themes"])
 
 @app.get("/api/health")
 def health():
-    return {"status": "ok"}
+    return {"status": "ok", "version": v["version"]}
 
 
 if __name__ == "__main__":
+    # Run migrations on startup
+    from migrate import migrate_all_projects
+    migrate_all_projects()
+
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
