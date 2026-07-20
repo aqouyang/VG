@@ -510,22 +510,14 @@ def render_fast(
 
     progress_pipe = os.path.join(cache_path, "progress.txt")
 
-    # FFmpeg subtitles filter path escaping.
-    # FFmpeg filter syntax requires escaping: \ : [ ] ; ,
-    # On Windows, convert backslashes first, then escape colons
-    # EXCEPT the drive letter colon.
+    # FFmpeg filter path escaping.
+    # In FFmpeg filter syntax, these characters are special and must
+    # be backslash-escaped: \ : [ ] ; ,
+    # ALL colons must be escaped, including the Windows drive letter.
+    # FFmpeg unescapes \: back to : when opening the file.
     ass_for_filter = ass_path.replace("\\", "/")
-    # Escape special filter chars: \ then : (but not drive letter)
-    ass_for_filter = ass_for_filter.replace("\\", "\\\\")
-    if sys.platform == "win32" and len(ass_for_filter) > 2 and ass_for_filter[1] == ":":
-        # Keep drive letter colon, escape any others
-        drive = ass_for_filter[0:2]
-        rest = ass_for_filter[2:].replace(":", "\\:")
-        ass_for_filter = drive + rest
-    else:
-        ass_for_filter = ass_for_filter.replace(":", "\\:")
+    ass_for_filter = ass_for_filter.replace(":", "\\:")
 
-    # Use subtitles filter with unquoted path (no single quotes)
     vf = f"subtitles={ass_for_filter},format=yuv420p"
 
     cmd = [
