@@ -66,20 +66,32 @@ export default function Dashboard() {
               Create cinematic lyric videos
             </div>
           </div>
-          <button
-            onClick={() => setShowCreate(true)}
-            style={{
-              background: "#6c5ce7", color: "#fff", border: "none",
-              padding: "12px 28px", borderRadius: 10, cursor: "pointer",
-              fontSize: 14, fontWeight: 600, transition: "transform 0.15s, box-shadow 0.15s",
-              boxShadow: "0 4px 20px rgba(108,92,231,0.3)",
-            }}
-            onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
-            onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
-            onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
-          >
-            + New Project
-          </button>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <button
+              onClick={() => navigate("/settings")}
+              style={{
+                background: "#1a1a28", color: "#888", border: "1px solid #2a2a3a",
+                padding: "10px 20px", borderRadius: 10, cursor: "pointer",
+                fontSize: 13, fontWeight: 500,
+              }}
+            >
+              Settings
+            </button>
+            <button
+              onClick={() => setShowCreate(true)}
+              style={{
+                background: "#6c5ce7", color: "#fff", border: "none",
+                padding: "12px 28px", borderRadius: 10, cursor: "pointer",
+                fontSize: 14, fontWeight: 600, transition: "transform 0.15s, box-shadow 0.15s",
+                boxShadow: "0 4px 20px rgba(108,92,231,0.3)",
+              }}
+              onMouseDown={(e) => (e.currentTarget.style.transform = "scale(0.97)")}
+              onMouseUp={(e) => (e.currentTarget.style.transform = "scale(1)")}
+              onMouseLeave={(e) => (e.currentTarget.style.transform = "scale(1)")}
+            >
+              + New Project
+            </button>
+          </div>
         </div>
 
         {/* Content */}
