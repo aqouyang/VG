@@ -43,14 +43,26 @@ export default function ProjectEditor() {
   linesRef.current = lines;
 
   // ─── SEEKING STATE (all refs, no React state) ─────────────────────
-  // isSeeking: true while user is dragging the slider.
-  //   When true, ALL timeupdate events are ignored.
-  // wasPlaying: was audio playing before drag started?
-  // timeRef: the definitive current time. Updated by timeupdate OR slider.
-  //   React `time` state is derived from this.
+  //
+  // Architecture:
+  //   timeRef: the single authoritative playback position.
+  //   seekId:  increments on every seek. onTimeUpdate ignores events
+  //            that arrive during or shortly after a seek.
+  //   seekSettleTimer: blocks timeupdate for 200ms after each seek
+  //            to let the audio element settle at the new position.
+  //
+  // Root cause of the old "jump back" bug:
+  //   After onSliderUp cleared isSeeking, a queued timeupdate event
+  //   (reporting the PRE-SEEK position) fired and overwrote timeRef.
+  //   The new seekId system rejects ALL timeupdate events until the
+  //   audio element confirms it has reached near the seek target.
+  //
   const isSeeking = useRef(false);
   const wasPlaying = useRef(false);
   const timeRef = useRef(0);
+  const seekId = useRef(0);
+  const seekTarget = useRef<number | null>(null);
+  const seekSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const toast = useCallback((msg: string, type: Toast["type"] = "info") => {
     const id = ++_tid;
@@ -79,8 +91,10 @@ export default function ProjectEditor() {
 
     if (!el) return;
 
-    // Restore position if we had one
+    // Restore position if we had one.
+    // Use seekTarget to block stale timeupdate events from the new element.
     if (timeRef.current > 0) {
+      seekTarget.current = timeRef.current;
       el.currentTime = timeRef.current;
     }
 
@@ -94,13 +108,24 @@ export default function ProjectEditor() {
 
   // Stable event handlers (use refs, never close over state)
   function onTimeUpdate(this: HTMLAudioElement) {
+    // Block 1: user is dragging the slider
     if (isSeeking.current) return;
+
+    // Block 2: a seek just happened and hasn't settled yet.
+    // After every seek, we set seekTarget and block timeupdate until
+    // the audio reports a position close to the target.
+    if (seekTarget.current !== null) {
+      const t = this.currentTime;
+      const target = seekTarget.current;
+      // Accept only if audio has reached within 0.5s of target
+      if (Math.abs(t - target) > 0.5) return;
+      // Audio has settled at the target. Clear the lock.
+      seekTarget.current = null;
+    }
+
     const t = this.currentTime;
-    // Guard: reject resets to 0 when we were previously past 0.5s
-    if (t === 0 && timeRef.current > 0.5) return;
     timeRef.current = t;
     setTime(t);
-    // Update active line
     const ll = linesRef.current;
     let a = -1;
     for (let i = ll.length - 1; i >= 0; i--) {
@@ -134,10 +159,13 @@ export default function ProjectEditor() {
         } catch {}
       }
     } catch (e: any) { toast("Load failed: " + e.message, "err"); }
-    // Restore position
-    if (audioRef.current && savedTime > 0) {
-      audioRef.current.currentTime = savedTime;
+    // Restore position after reload
+    if (savedTime > 0) {
+      // Use seekTarget to block stale events
+      seekTarget.current = savedTime;
+      timeRef.current = savedTime;
       setTime(savedTime);
+      if (audioRef.current) audioRef.current.currentTime = savedTime;
     }
   }, [name, toast]);
 
@@ -178,32 +206,37 @@ export default function ProjectEditor() {
     }
   }, [focus, tab]);
 
-  // ─── Helpers ──────────────────────────────────────────────────────
+  // ─── SINGLE AUTHORITATIVE SEEK ─────────────────────────────────────
+  // Every seek in the entire component goes through this function.
+  // It sets the target, blocks stale timeupdate events, and syncs audio.
+  const performSeek = useCallback((t: number) => {
+    const a = audioRef.current;
+    seekId.current++;
+    seekTarget.current = t;
+    timeRef.current = t;
+    setTime(t);
+    if (a) {
+      a.currentTime = t;
+    }
+  }, []);
+
   const togglePlay = () => {
     const a = audioRef.current; if (!a) return;
     if (a.paused) {
-      // Always sync audio position to the authoritative time before playing.
-      // This prevents the "starts from 0" bug when play is pressed after seeking.
-      a.currentTime = timeRef.current;
+      // Sync to authoritative position, then play.
+      // seekTarget blocks timeupdate until audio confirms the position.
+      performSeek(timeRef.current);
       a.play();
     } else {
       a.pause();
     }
   };
 
-  const seekTo = (t: number) => {
-    const a = audioRef.current; if (!a) return;
-    timeRef.current = t;
-    a.currentTime = t;
-    setTime(t);
-  };
+  const seekTo = (t: number) => performSeek(t);
 
   const skip = (d: number) => {
     const a = audioRef.current; if (!a) return;
-    const t = Math.max(0, Math.min(a.duration || 0, a.currentTime + d));
-    timeRef.current = t;
-    a.currentTime = t;
-    setTime(t);
+    performSeek(Math.max(0, Math.min(a.duration || 0, timeRef.current + d)));
   };
 
   // ─── SLIDER SEEKING ──────────────────────────────────────────────
@@ -216,22 +249,29 @@ export default function ProjectEditor() {
 
   const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
+    // During drag: update display and timeRef, but use performSeek
+    // to block stale timeupdate events.
+    seekId.current++;
+    seekTarget.current = v;
     timeRef.current = v;
     setTime(v);
     if (audioRef.current) audioRef.current.currentTime = v;
   }, []);
 
   const onSliderUp = useCallback(() => {
+    // Commit the final seek position with full transaction.
+    const finalTime = timeRef.current;
+    performSeek(finalTime);
     setTimeout(() => {
       isSeeking.current = false;
       const a = audioRef.current;
       if (a) {
-        // Re-sync position before resuming, in case the browser lost it
-        a.currentTime = timeRef.current;
+        // Ensure audio is at the committed position
+        a.currentTime = finalTime;
         if (wasPlaying.current) a.play();
       }
-    }, 100);
-  }, []);
+    }, 150);
+  }, [performSeek]);
 
   // ─── Stamp / Undo / Nudge ────────────────────────────────────────
   const pushUndo = () => setUndoStack(p => [...p.slice(-19), lines.map(l => ({ ...l }))]);
