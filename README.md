@@ -8,6 +8,7 @@ A local web application that generates cinematic lyric videos from audio, lyrics
 - **Automatic Lyric Sync** - WhisperX/Whisper-based alignment with fallback
 - **Lyric Editor** - Timeline-based editor with audio playback
 - **Video Preview** - Real-time preview in browser
+- **Visual Editor** - Customizable layout, typography, backgrounds, and themes
 - **MP4 Export** - Remotion-powered 1920x1080 video rendering
 - **Multi-language** - English, French, Chinese, and mixed
 
@@ -18,10 +19,34 @@ A local web application that generates cinematic lyric videos from audio, lyrics
 - FFmpeg
 - (Optional) WhisperX or OpenAI Whisper for automatic alignment
 
-## Quick Start
+## Quick Start (Windows)
+
+```powershell
+# Install Python dependencies
+cd backend
+pip install -r requirements.txt
+cd ..
+
+# Install frontend dependencies
+cd frontend
+npm install
+cd ..
+
+# Start backend (Terminal 1)
+cd backend
+python main.py
+
+# Start frontend (Terminal 2)
+cd frontend
+npm run dev
+
+# Open http://localhost:3000
+```
+
+## Quick Start (macOS / Linux)
 
 ```bash
-# Install dependencies
+# Install all dependencies
 chmod +x install.sh
 ./install.sh
 
@@ -36,8 +61,11 @@ cd frontend && npm run dev
 
 ## Rendering
 
-```bash
-# Render a project to MP4
+```powershell
+# Windows
+python render.py <project_name>
+
+# macOS / Linux
 python3 render.py <project_name>
 
 # Output: exports/<project_name>.mp4
