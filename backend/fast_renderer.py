@@ -323,8 +323,9 @@ def generate_ass(
     lines_out = []
     lines_out.append("[Script Info]")
     lines_out.append("ScriptType: v4.00+")
-    lines_out.append(f"PlayResX: {w}")
-    lines_out.append(f"PlayResY: {h}")
+    lines_out.append(f"PlayResX: {int(w)}")
+    lines_out.append(f"PlayResY: {int(h)}")
+    lines_out.append("ScaledBorderAndShadow: yes")
     lines_out.append("WrapStyle: 0")
     lines_out.append("")
     lines_out.append("[V4+ Styles]")
@@ -441,9 +442,15 @@ def render_fast(
 
     cfg = project.get("visual_config", {})
     vc = cfg.get("video", {})
-    w = vc.get("width", 1920)
-    h = vc.get("height", 1080)
-    fps = vc.get("fps", 30)
+    # Validate and normalize dimensions to positive integers
+    try:
+        w = int(round(float(vc.get("width", 1920))))
+        h = int(round(float(vc.get("height", 1080))))
+        fps = int(round(float(vc.get("fps", 30))))
+    except (ValueError, TypeError):
+        w, h, fps = 1920, 1080, 30
+    if w <= 0 or h <= 0 or fps <= 0:
+        w, h, fps = 1920, 1080, 30
 
     import soundfile as sf
     audio_path = os.path.join(project_dir, "audio", project["audio_file"])
@@ -510,15 +517,33 @@ def render_fast(
 
     progress_pipe = os.path.join(cache_path, "progress.txt")
 
-    # FFmpeg filter path escaping.
-    # In FFmpeg filter syntax, these characters are special and must
-    # be backslash-escaped: \ : [ ] ; ,
-    # ALL colons must be escaped, including the Windows drive letter.
-    # FFmpeg unescapes \: back to : when opening the file.
+    # ── Preflight: check FFmpeg has ass or subtitles filter ──
+    from ffmpeg_resolver import resolve as ffmpeg_resolve
+    ffinfo = ffmpeg_resolve()
+    has_ass_filter = "ass" in ffinfo.get("filters", [])
+    has_sub_filter = "subtitles" in ffinfo.get("filters", [])
+    if not has_ass_filter and not has_sub_filter:
+        raise RuntimeError(
+            "FFmpeg does not have libass support. "
+            "Install a full FFmpeg build that includes libass "
+            "(e.g. ffmpeg-release-essentials from gyan.dev)."
+        )
+
+    # ── Verify ASS file ──
+    if not os.path.isfile(ass_path):
+        raise RuntimeError(f"ASS file not found: {ass_path}")
+
+    # ── Build FFmpeg filter string ──
+    # FFmpeg filter syntax requires escaping: \ : ' [ ] ; ,
+    # Use the 'ass' filter (simpler than 'subtitles', no original_size).
+    # Escape ALL colons and backslashes in the path.
     ass_for_filter = ass_path.replace("\\", "/")
     ass_for_filter = ass_for_filter.replace(":", "\\:")
 
-    vf = f"subtitles={ass_for_filter},format=yuv420p"
+    if has_ass_filter:
+        vf = f"ass={ass_for_filter},format=yuv420p"
+    else:
+        vf = f"subtitles={ass_for_filter},format=yuv420p"
 
     cmd = [
         ffmpeg_exe, "-y",
@@ -533,11 +558,25 @@ def render_fast(
         output_path,
     ]
 
+    # ── Preflight diagnostics (written to cache for debugging) ──
+    diag = {
+        "canvas": f"{w}x{h}",
+        "fps": fps,
+        "duration": duration,
+        "ass_path": ass_path,
+        "ass_exists": os.path.isfile(ass_path),
+        "filter": vf.split(",")[0],
+        "encoder": encoder_args,
+        "cmd": cmd,
+    }
+    diag_path = os.path.join(cache_path, "render-diag.json")
+    with open(diag_path, "w") as f:
+        json.dump(diag, f, indent=2, default=str)
+
     t_enc_start = time.time()
     ffmpeg_output_lines = []
     # Do NOT use shell=True. FFmpeg is a real executable, not a batch
-    # script. shell=True causes cmd.exe to mangle backslash escapes
-    # in the filter string (e.g. \: becomes just :).
+    # script. shell=True causes cmd.exe to mangle backslash escapes.
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
