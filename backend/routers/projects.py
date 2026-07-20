@@ -120,8 +120,9 @@ async def upload_audio(name: str, file: UploadFile = File(...)):
         f.write(content)
 
     # Get audio duration
-    import librosa
-    duration = float(librosa.get_duration(filename=audio_path))
+    import soundfile as sf
+    info = sf.info(audio_path)
+    duration = float(info.duration)
 
     data = load_project_json(name)
     data["audio_file"] = f"song{ext}"

@@ -56,9 +56,10 @@ def main():
             lrc_lines.append({"time": t, "text": m.group(3)})
 
     # Get audio duration
-    import librosa
+    import soundfile as sf
     audio_path = os.path.join(project_dir, "audio", project["audio_file"])
-    duration = float(librosa.get_duration(filename=audio_path))
+    info = sf.info(audio_path)
+    duration = float(info.duration)
     total_frames = int(duration * 30)
 
     # Create input props for Remotion
