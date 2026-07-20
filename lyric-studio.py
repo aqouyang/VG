@@ -190,6 +190,33 @@ def cmd_update(check_only=False, force_backup=False):
     if not req_changed and not pkg_changed:
         ok("Dependencies unchanged.")
 
+    # Always rebuild frontend if any frontend source changed
+    frontend_changed = subprocess.run(
+        ["git", "diff", old_head, "HEAD", "--name-only", "--", "frontend/src/"],
+        cwd=ROOT, capture_output=True, text=True
+    ).stdout.strip()
+    if frontend_changed or pkg_changed:
+        log(f"\n  {C.DIM}Rebuilding frontend...{C.RESET}")
+        # Clear stale build artifacts
+        dist_dir = os.path.join(ROOT, "frontend", "dist")
+        if os.path.exists(dist_dir):
+            shutil.rmtree(dist_dir)
+        r = subprocess.run(
+            ["npx", "vite", "build"],
+            cwd=os.path.join(ROOT, "frontend"),
+            capture_output=True, text=True,
+        )
+        if r.returncode == 0:
+            ok("Frontend rebuilt successfully.")
+        else:
+            warn(f"Frontend build failed: {r.stderr.strip()[:200]}")
+    else:
+        ok("Frontend unchanged — no rebuild needed.")
+
+    log("")
+    warn("Restart the servers for changes to take effect.")
+    info("Run: python lyric-studio.py start")
+
     heading("Update complete")
 
 

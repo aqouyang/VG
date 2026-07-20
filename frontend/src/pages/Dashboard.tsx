@@ -3,11 +3,18 @@ import { useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import type { Project } from "../types";
 
+interface VersionInfo {
+  version: string;
+  commit: string;
+  commit_date: string;
+}
+
 export default function Dashboard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [showDelete, setShowDelete] = useState<string | null>(null);
   const [form, setForm] = useState({ name: "", title: "", artist: "" });
+  const [versionInfo, setVersionInfo] = useState<VersionInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const navigate = useNavigate();
@@ -17,6 +24,7 @@ export default function Dashboard() {
       .then(setProjects)
       .catch(console.error)
       .finally(() => setLoading(false));
+    api.getVersion().then(setVersionInfo).catch(() => {});
   }, []);
 
   const handleCreate = async () => {
@@ -289,6 +297,23 @@ export default function Dashboard() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Version footer */}
+      {versionInfo && (
+        <div style={{
+          position: "fixed", bottom: 0, left: 0, right: 0,
+          padding: "8px 24px", background: "rgba(10,10,15,0.9)",
+          borderTop: "1px solid #1a1a2a",
+          display: "flex", justifyContent: "center", gap: 24,
+          fontSize: 11, color: "#444",
+        }}>
+          <span>Lyric Studio v{versionInfo.version}</span>
+          {versionInfo.commit && <span>Build: {versionInfo.commit}</span>}
+          {versionInfo.commit_date && (
+            <span>Updated: {new Date(versionInfo.commit_date).toLocaleDateString()}</span>
+          )}
         </div>
       )}
     </div>

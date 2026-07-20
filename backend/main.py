@@ -38,6 +38,33 @@ def health():
     return {"status": "ok", "version": v["version"]}
 
 
+@app.get("/api/version")
+def version_info():
+    """Return full version info including git commit."""
+    import subprocess
+    commit = ""
+    commit_date = ""
+    try:
+        commit = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            capture_output=True, text=True,
+        ).stdout.strip()
+        commit_date = subprocess.run(
+            ["git", "log", "-1", "--format=%ci"],
+            cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            capture_output=True, text=True,
+        ).stdout.strip()
+    except Exception:
+        pass
+    return {
+        "version": v["version"],
+        "schema_version": v.get("schema_version", 1),
+        "commit": commit,
+        "commit_date": commit_date,
+    }
+
+
 if __name__ == "__main__":
     # Run migrations on startup
     from migrate import migrate_all_projects

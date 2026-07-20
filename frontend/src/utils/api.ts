@@ -89,4 +89,8 @@ export const api = {
 
   deleteTheme: (name: string) =>
     request(`/themes/${name}`, { method: "DELETE" }),
+
+  // Version
+  getVersion: (): Promise<{ version: string; schema_version: number; commit: string; commit_date: string }> =>
+    request("/version"),
 };
