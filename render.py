@@ -74,6 +74,17 @@ def main():
     render_h = vc.get("height", 1080)
     total_frames = int(duration * render_fps)
 
+    # Validate frame count
+    if total_frames <= 0:
+        print("Error: Audio duration is 0. Cannot render.")
+        sys.exit(1)
+
+    print(f"\033[1mRendering {project_name}\033[0m")
+    print(f"  Audio:      {duration:.1f}s")
+    print(f"  Resolution: {render_w}x{render_h} @ {render_fps}fps")
+    print(f"  Frames:     {total_frames} (0-{total_frames - 1})")
+    print(f"  Config:     {'custom' if project.get('visual_config') else 'default'}")
+
     # Create input props for Remotion
     props = {
         "projectName": project_name,
@@ -82,9 +93,9 @@ def main():
         "audioFile": project["audio_file"],
         "coverFile": project["cover_file"],
         "lrcLines": lrc_lines,
+        "durationInFrames": total_frames,
     }
 
-    # Include visual config if present
     if project.get("visual_config"):
         props["visualConfig"] = project["visual_config"]
 
@@ -109,10 +120,6 @@ def main():
     if not os.path.exists(cover_dst) or os.path.getmtime(cover_src) > os.path.getmtime(cover_dst):
         shutil.copy2(cover_src, cover_dst)
 
-    print(f"\033[1mRendering {project_name}\033[0m")
-    print(f"  Resolution: {render_w}x{render_h} @ {render_fps}fps")
-    print(f"  Duration:   {duration:.1f}s ({total_frames} frames)")
-    print(f"  Config:     {'custom' if project.get('visual_config') else 'default'}")
     print(f"  Output:     {output_path}")
     print()
 

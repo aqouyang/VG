@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from config import PROJECTS_DIR, EXPORTS_DIR, ensure_data_dirs, get_app_version
-from routers import projects, alignment, waveform, themes
+from routers import projects, alignment, waveform, themes, export
 
 ensure_data_dirs()
 
@@ -31,6 +31,7 @@ app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(alignment.router, prefix="/api/alignment", tags=["alignment"])
 app.include_router(waveform.router, prefix="/api/waveform", tags=["waveform"])
 app.include_router(themes.router, prefix="/api/themes", tags=["themes"])
+app.include_router(export.router, prefix="/api/export", tags=["export"])
 
 
 @app.get("/api/health")
