@@ -333,43 +333,80 @@ def create_job(req: CreateJobRequest):
     return job
 
 
-# ─── Process suspension helpers ──────────────────────────────────────
+# ─── Process tree suspension using psutil ────────────────────────────
+# psutil handles cross-platform process trees reliably.
+# It suspends/resumes ALL descendants (FFmpeg, Chromium, Node workers).
 
-def _suspend_process(proc: subprocess.Popen) -> bool:
-    """Suspend a process (SIGSTOP on Linux, SuspendThread on Windows)."""
+_suspended_pids: dict[str, list[int]] = {}  # job_id -> list of suspended PIDs
+
+
+def _suspend_tree(proc: subprocess.Popen, job_id: str) -> tuple[bool, list[int]]:
+    """Suspend a process and all its descendants. Returns (success, pids)."""
+    import psutil
+    pids = []
     try:
-        if sys.platform == "win32":
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(0x0002, False, proc.pid)  # PROCESS_SET_INFORMATION (not needed, use debug)
-            # Use NtSuspendProcess which suspends all threads
-            ntdll = ctypes.windll.ntdll
-            ntdll.NtSuspendProcess(handle)
-            kernel32.CloseHandle(handle)
-        else:
-            import signal
-            os.kill(proc.pid, signal.SIGSTOP)
+        parent = psutil.Process(proc.pid)
+        # Collect all descendants first, then suspend bottom-up
+        children = parent.children(recursive=True)
+        # Suspend children first (bottom-up), then parent
+        for child in reversed(children):
+            try:
+                child.suspend()
+                pids.append(child.pid)
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        parent.suspend()
+        pids.append(parent.pid)
+        _suspended_pids[job_id] = pids
+        return True, pids
+    except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+        return False, pids
+    except Exception:
+        return False, pids
+
+
+def _resume_tree(proc: subprocess.Popen, job_id: str) -> bool:
+    """Resume a process and all its descendants."""
+    import psutil
+    try:
+        parent = psutil.Process(proc.pid)
+        # Resume parent first, then children (top-down)
+        try:
+            parent.resume()
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            pass
+        for child in parent.children(recursive=True):
+            try:
+                child.resume()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        _suspended_pids.pop(job_id, None)
         return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        _suspended_pids.pop(job_id, None)
+        return False
     except Exception:
         return False
 
 
-def _resume_process(proc: subprocess.Popen) -> bool:
-    """Resume a suspended process."""
+def _kill_tree(proc: subprocess.Popen, job_id: str):
+    """Kill a process and all its descendants."""
+    import psutil
     try:
-        if sys.platform == "win32":
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            handle = kernel32.OpenProcess(0x0800, False, proc.pid)  # PROCESS_SUSPEND_RESUME
-            ntdll = ctypes.windll.ntdll
-            ntdll.NtResumeProcess(handle)
-            kernel32.CloseHandle(handle)
-        else:
-            import signal
-            os.kill(proc.pid, signal.SIGCONT)
-        return True
+        parent = psutil.Process(proc.pid)
+        children = parent.children(recursive=True)
+        for child in children:
+            try:
+                child.kill()
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                pass
+        parent.kill()
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        pass
     except Exception:
-        return False
+        pass
+    _suspended_pids.pop(job_id, None)
+    _active_procs.pop(job_id, None)
 
 
 @router.post("/jobs/{job_id}/pause")
@@ -381,17 +418,19 @@ def pause_job(job_id: str):
     if job["status"] not in ("rendering", "encoding", "queued"):
         raise HTTPException(400, f"Cannot pause job in status {job['status']}")
 
-    # Actually suspend the running process instead of killing it
+    job["status"] = "pausing"
+    _save_job(job)
+
     proc = _active_procs.get(job_id)
+    suspended_pids = []
     if proc and proc.poll() is None:
-        suspended = _suspend_process(proc)
-        if not suspended:
-            # Fallback: for chunked renderer, just mark paused and let the
-            # chunk loop check the status. The current chunk finishes but
-            # no new chunk starts.
+        ok, suspended_pids = _suspend_tree(proc, job_id)
+        if not ok:
+            # Fallback: mark paused anyway, chunk loop will check status
             pass
 
     job["status"] = "paused"
+    job["_suspended_pids"] = suspended_pids
     _save_job(job)
     return job
 
@@ -405,17 +444,18 @@ def resume_job(job_id: str):
     if job["status"] not in ("paused", "interrupted", "failed"):
         raise HTTPException(400, f"Cannot resume job in status {job['status']}")
 
-    # Resume suspended process if it's still alive
     proc = _active_procs.get(job_id)
     if proc and proc.poll() is None:
-        _resume_process(proc)
+        _resume_tree(proc, job_id)
         job["status"] = "rendering"
+        job.pop("_suspended_pids", None)
         _save_job(job)
         return job
 
-    # Process was terminated or doesn't exist. Re-queue the job.
+    # Process is dead. Re-queue.
     job["status"] = "queued"
     job["error"] = ""
+    job.pop("_suspended_pids", None)
     _save_job(job)
     t = threading.Thread(target=_process_queue, daemon=True)
     t.start()
@@ -428,10 +468,11 @@ def cancel_job(job_id: str):
         job = _jobs.get(job_id)
     if not job:
         raise HTTPException(404)
-    proc = _active_procs.pop(job_id, None)
+    proc = _active_procs.get(job_id)
     if proc:
-        proc.terminate()
+        _kill_tree(proc, job_id)
     job["status"] = "cancelled"
+    job.pop("_suspended_pids", None)
     _save_job(job)
     return job
 
