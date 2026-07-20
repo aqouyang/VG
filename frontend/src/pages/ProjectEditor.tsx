@@ -7,1256 +7,582 @@ import type { Project, LrcLine, VisualConfig } from "../types";
 import LyricVideoPreview from "../components/LyricVideoPreview";
 import VisualEditor from "../components/VisualEditor";
 
-/* ------------------------------------------------------------------ */
-/*  Toast type                                                         */
-/* ------------------------------------------------------------------ */
-interface Toast {
-  id: number;
-  message: string;
-  type: "info" | "success" | "error";
-  ttl: number;
-}
+// ─── Toast ───────────────────────────────────────────────────────────
+interface Toast { id: number; msg: string; type: "info" | "ok" | "err" }
+let _tid = 0;
 
-let nextToastId = 0;
-
-/* ------------------------------------------------------------------ */
-/*  Inline styles (dark theme, #0a0a0f family)                         */
-/* ------------------------------------------------------------------ */
-const s = {
-  page: {
-    display: "flex",
-    flexDirection: "column" as const,
-    minHeight: "100vh",
-    background: "#0a0a0f",
-    color: "#ccc",
-  } as React.CSSProperties,
-
-  topBar: {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "12px 24px",
-    background: "#12121a",
-    borderBottom: "1px solid #1e1e2a",
-    zIndex: 10,
-  } as React.CSSProperties,
-
-  backBtn: {
-    background: "none",
-    border: "none",
-    color: "#888",
-    cursor: "pointer",
-    fontSize: 14,
-    display: "flex",
-    alignItems: "center",
-    gap: 6,
-    transition: "color 0.15s",
-  } as React.CSSProperties,
-
-  songInfo: {
-    color: "#fff",
-    fontWeight: 600,
-    fontSize: 16,
-    letterSpacing: 0.3,
-  } as React.CSSProperties,
-
-  body: {
-    display: "flex",
-    flex: 1,
-    overflow: "hidden",
-  } as React.CSSProperties,
-
-  sidebar: {
-    width: 280,
-    background: "#12121a",
-    borderRight: "1px solid #1e1e2a",
-    padding: 20,
-    overflowY: "auto" as const,
-    flexShrink: 0,
-  } as React.CSSProperties,
-
-  rightPanel: {
-    width: 320,
-    background: "#12121a",
-    borderLeft: "1px solid #1e1e2a",
-    flexShrink: 0,
-    display: "flex",
-    flexDirection: "column" as const,
-  } as React.CSSProperties,
-
-  main: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    overflow: "hidden",
-    background: "#0a0a0f",
-  } as React.CSSProperties,
-
-  section: {
-    marginBottom: 20,
-  } as React.CSSProperties,
-
-  sectionTitle: {
-    fontSize: 11,
-    color: "#666",
-    textTransform: "uppercase" as const,
-    marginBottom: 8,
-    letterSpacing: 1.2,
-    fontWeight: 600,
-  } as React.CSSProperties,
-
-  btn: {
-    background: "#6c5ce7",
-    color: "#fff",
-    border: "none",
-    padding: "8px 16px",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    width: "100%",
-    marginBottom: 8,
-    transition: "background 0.15s, transform 0.1s",
-  } as React.CSSProperties,
-
-  btnSecondary: {
-    background: "#1e1e2e",
-    color: "#bbb",
-    border: "1px solid #2a2a3a",
-    padding: "8px 16px",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 13,
-    width: "100%",
-    marginBottom: 8,
-    transition: "background 0.15s",
-  } as React.CSSProperties,
-
-  btnDanger: {
-    background: "#2a1515",
-    color: "#e88",
-    border: "1px solid #3a2020",
-    padding: "8px 16px",
-    borderRadius: 6,
-    cursor: "pointer",
-    fontSize: 13,
-    width: "100%",
-    marginBottom: 8,
-    transition: "background 0.15s",
-  } as React.CSSProperties,
-
-  fileLabel: {
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#0e0e18",
-    border: "1px dashed #333",
-    borderRadius: 8,
-    padding: "18px 14px",
-    textAlign: "center" as const,
-    cursor: "pointer",
-    color: "#666",
-    fontSize: 12,
-    marginBottom: 8,
-    transition: "border-color 0.2s, background 0.2s",
-    gap: 6,
-  } as React.CSSProperties,
-
-  editorArea: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column" as const,
-    overflow: "hidden",
-  } as React.CSSProperties,
-
-  lrcList: {
-    flex: 1,
-    overflowY: "auto" as const,
-    padding: "12px 20px",
-  } as React.CSSProperties,
-
-  audioBar: {
-    padding: "12px 24px",
-    background: "#0c0c14",
-    borderTop: "1px solid #1e1e2a",
-    display: "flex",
-    alignItems: "center",
-    gap: 12,
-  } as React.CSSProperties,
-
-  playBtn: {
-    background: "#6c5ce7",
-    border: "none",
-    color: "#fff",
-    width: 36,
-    height: 36,
-    borderRadius: "50%",
-    cursor: "pointer",
-    fontSize: 16,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    flexShrink: 0,
-    transition: "background 0.15s, transform 0.1s",
-  } as React.CSSProperties,
-
-  timeDisplay: {
-    color: "#888",
-    fontSize: 13,
-    fontFamily: "monospace",
-    minWidth: 90,
-  } as React.CSSProperties,
-
-  slider: {
-    flex: 1,
-    accentColor: "#6c5ce7",
-    cursor: "pointer",
-  } as React.CSSProperties,
-
-  previewContainer: {
-    flex: 1,
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    background: "#000",
-    padding: 20,
-    overflow: "hidden",
-  } as React.CSSProperties,
-
-  tabs: {
-    display: "flex",
-    borderBottom: "1px solid #1e1e2a",
-    background: "#12121a",
-  } as React.CSSProperties,
-
-  tab: {
-    padding: "12px 24px",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    border: "none",
-    background: "none",
-    color: "#666",
-    transition: "color 0.2s",
-    borderBottom: "2px solid transparent",
-  } as React.CSSProperties,
-
-  tabActive: {
-    padding: "12px 24px",
-    cursor: "pointer",
-    fontSize: 13,
-    fontWeight: 500,
-    border: "none",
-    background: "none",
-    color: "#fff",
-    borderBottom: "2px solid #6c5ce7",
-    transition: "color 0.2s",
-  } as React.CSSProperties,
-};
-
-/* ------------------------------------------------------------------ */
-/*  SVG icons (inline)                                                 */
-/* ------------------------------------------------------------------ */
-const IconUpload = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
-    <polyline points="17 8 12 3 7 8" />
-    <line x1="12" y1="3" x2="12" y2="15" />
-  </svg>
-);
-
-const IconMusic = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7ec87e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M9 18V5l12-2v13" />
-    <circle cx="6" cy="18" r="3" />
-    <circle cx="18" cy="16" r="3" />
-  </svg>
-);
-
-const IconLyrics = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#7ec87e" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="4" y1="6" x2="20" y2="6" />
-    <line x1="4" y1="10" x2="16" y2="10" />
-    <line x1="4" y1="14" x2="18" y2="14" />
-    <line x1="4" y1="18" x2="12" y2="18" />
-  </svg>
-);
-
-const IconImage = () => (
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#555" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
-    <circle cx="8.5" cy="8.5" r="1.5" />
-    <polyline points="21 15 16 10 5 21" />
-  </svg>
-);
-
-const IconEmpty = () => (
-  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
-    <polyline points="14 2 14 8 20 8" />
-    <line x1="16" y1="13" x2="8" y2="13" />
-    <line x1="16" y1="17" x2="8" y2="17" />
-    <polyline points="10 9 9 9 8 9" />
-  </svg>
-);
-
-const IconVideoOff = () => (
-  <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#333" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="2" y="4" width="16" height="16" rx="2" />
-    <path d="M22 7l-4 3 4 3V7z" />
-    <line x1="8" y1="10" x2="12" y2="14" />
-    <line x1="12" y1="10" x2="8" y2="14" />
-  </svg>
-);
-
-const SpinnerSvg = () => (
-  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" style={{ animation: "spin 0.8s linear infinite" }}>
-    <circle cx="12" cy="12" r="10" stroke="#6c5ce7" strokeWidth="3" strokeDasharray="32" strokeLinecap="round" />
-  </svg>
-);
-
-/* ------------------------------------------------------------------ */
-/*  Component                                                          */
-/* ------------------------------------------------------------------ */
+// ─── Component ───────────────────────────────────────────────────────
 export default function ProjectEditor() {
   const { name } = useParams<{ name: string }>();
-  const navigate = useNavigate();
+  const nav = useNavigate();
 
-  /* ---------- Core state ---------- */
+  // Data
   const [project, setProject] = useState<Project | null>(null);
-  const [lrcLines, setLrcLines] = useState<LrcLine[]>([]);
-  const [activeTab, setActiveTab] = useState<"editor" | "preview">("editor");
-  const [playing, setPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [activeLine, setActiveLine] = useState(-1);
-  const [focusLine, setFocusLine] = useState(0);
-  const [visualConfig, setVisualConfig] = useState<VisualConfig>(defaultVisualConfig);
-  const [configDirty, setConfigDirty] = useState(false);
-  const [uploading, setUploading] = useState(false);
+  const [lines, setLines] = useState<LrcLine[]>([]);
+  const [cfg, setCfg] = useState<VisualConfig>(defaultVisualConfig);
 
-  /* ---------- Toast state ---------- */
+  // UI
+  const [tab, setTab] = useState<"editor" | "preview">("editor");
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const [busy, setBusy] = useState("");
+  const [focus, setFocus] = useState(0);
 
-  /* ---------- Refs ---------- */
+  // Audio
+  const [playing, setPlaying] = useState(false);
+  const [time, setTime] = useState(0);
+  const [activeLine, setActiveLine] = useState(-1);
+
+  // Refs
   const audioRef = useRef<HTMLAudioElement>(null);
-  const lrcListRef = useRef<HTMLDivElement>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const seekingRef = useRef(false);
-  const wasPlayingRef = useRef(false);
+  const listRef = useRef<HTMLDivElement>(null);
+  const saveTimer = useRef<ReturnType<typeof setTimeout>>();
 
-  /* ---------------------------------------------------------------- */
-  /*  Toast helpers                                                    */
-  /* ---------------------------------------------------------------- */
-  const addToast = useCallback(
-    (message: string, type: "info" | "success" | "error" = "info", ttl: number = 3000) => {
-      const id = ++nextToastId;
-      setToasts((prev) => [...prev, { id, message, type, ttl }]);
-      setTimeout(() => {
-        setToasts((prev) => prev.filter((t) => t.id !== id));
-      }, ttl);
-    },
-    [],
-  );
+  // ─── CRITICAL: Seeking state ─────────────────────────────────────
+  // This ref is the single source of truth for whether the user is
+  // dragging the slider. When true, timeupdate is completely ignored.
+  const isSeeking = useRef(false);
+  // Whether audio was playing before the user started dragging
+  const wasPlaying = useRef(false);
 
-  /* ---------------------------------------------------------------- */
-  /*  Load project                                                     */
-  /* ---------------------------------------------------------------- */
-  const loadProject = useCallback(async () => {
+  // ─── Toast helper ────────────────────────────────────────────────
+  const toast = useCallback((msg: string, type: Toast["type"] = "info") => {
+    const id = ++_tid;
+    setToasts(p => [...p, { id, msg, type }]);
+    setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
+  }, []);
+
+  // ─── Load project ────────────────────────────────────────────────
+  const load = useCallback(async () => {
     if (!name) return;
     try {
       const p = await api.getProject(name);
       setProject(p);
-      setVisualConfig(mergeConfig(defaultVisualConfig, p.visual_config));
-
-      // Load lyrics: try LRC first, then plain text
+      setCfg(mergeConfig(defaultVisualConfig, p.visual_config));
       if (p.lrc_file) {
         try {
-          const lrc = await api.getLrc(name);
-          const parsed = parseLrc(lrc.content);
-          if (parsed.length > 0) {
-            setLrcLines(parsed);
-            return;
-          }
-        } catch {
-          /* ignore */
-        }
+          const r = await api.getLrc(name);
+          const parsed = parseLrc(r.content);
+          if (parsed.length) { setLines(parsed); return; }
+        } catch {}
       }
       if (p.lyrics_file) {
         try {
-          const txt = await api.getLyricsText(name);
-          setLrcLines(parseAnyLyrics(txt.content));
-        } catch {
-          /* ignore */
-        }
+          const r = await api.getLyricsText(name);
+          setLines(parseAnyLyrics(r.content));
+        } catch {}
       }
-    } catch (e: any) {
-      addToast("Failed to load project: " + e.message, "error", 5000);
-    }
-  }, [name, addToast]);
+    } catch (e: any) { toast("Load failed: " + e.message, "err"); }
+  }, [name, toast]);
 
-  useEffect(() => {
-    loadProject();
-  }, [loadProject]);
+  useEffect(() => { load(); }, [load]);
 
-  /* ---------------------------------------------------------------- */
-  /*  Audio time tracking (respects seeking ref)                       */
-  /* ---------------------------------------------------------------- */
+  // ─── Audio timeupdate ────────────────────────────────────────────
+  // CRITICAL: this MUST check isSeeking.current on every tick
   useEffect(() => {
-    if (!audioRef.current) return;
     const audio = audioRef.current;
-
+    if (!audio) return;
     const onTime = () => {
-      if (seekingRef.current) return; // do NOT fight the slider
-      setCurrentTime(audio.currentTime);
-
-      // Find active line (only lines with timestamps set)
-      let active = -1;
-      for (let i = lrcLines.length - 1; i >= 0; i--) {
-        if (lrcLines[i].time >= 0 && audio.currentTime >= lrcLines[i].time) {
-          active = i;
-          break;
-        }
+      // When the user is dragging the slider, do NOT update time.
+      // This is the fix for the "jumps back" bug.
+      if (isSeeking.current) return;
+      setTime(audio.currentTime);
+      let a = -1;
+      for (let i = lines.length - 1; i >= 0; i--) {
+        if (lines[i].time >= 0 && audio.currentTime >= lines[i].time) { a = i; break; }
       }
-      setActiveLine(active);
+      setActiveLine(a);
     };
-
     const onEnd = () => setPlaying(false);
-
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("ended", onEnd);
+    audio.addEventListener("play", onPlay);
+    audio.addEventListener("pause", onPause);
     return () => {
       audio.removeEventListener("timeupdate", onTime);
       audio.removeEventListener("ended", onEnd);
+      audio.removeEventListener("play", onPlay);
+      audio.removeEventListener("pause", onPause);
     };
-  }, [lrcLines]);
+  }, [lines]);
 
-  /* ---------------------------------------------------------------- */
-  /*  Keyboard shortcuts for timestamp recording                       */
-  /* ---------------------------------------------------------------- */
+  // ─── Keyboard shortcuts ──────────────────────────────────────────
   useEffect(() => {
-    const handleKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if (activeTab !== "editor") return;
-
-      if (e.code === "Space") {
+    const h = (e: KeyboardEvent) => {
+      const t = (e.target as HTMLElement)?.tagName;
+      if (t === "INPUT" || t === "TEXTAREA") return;
+      if (tab !== "editor") return;
+      if (e.code === "Space") { e.preventDefault(); togglePlay(); }
+      else if (e.code === "Enter") { e.preventDefault(); stamp(); }
+      else if (e.code === "ArrowDown") { e.preventDefault(); setFocus(f => Math.min(f + 1, lines.length - 1)); }
+      else if (e.code === "ArrowUp") { e.preventDefault(); setFocus(f => Math.max(f - 1, 0)); }
+      else if (e.code === "Backspace" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        togglePlay();
-      } else if (e.code === "Enter" || e.code === "NumpadEnter") {
-        e.preventDefault();
-        stampCurrentLine();
-      } else if (e.code === "ArrowDown") {
-        e.preventDefault();
-        setFocusLine((prev) => Math.min(prev + 1, lrcLines.length - 1));
-      } else if (e.code === "ArrowUp") {
-        e.preventDefault();
-        setFocusLine((prev) => Math.max(prev - 1, 0));
-      } else if (e.code === "Backspace" && (e.metaKey || e.ctrlKey)) {
-        e.preventDefault();
-        setLrcLines((prev) => {
-          const updated = [...prev];
-          updated[focusLine] = { ...updated[focusLine], time: -1 };
-          return updated;
-        });
+        setLines(p => { const u = [...p]; u[focus] = { ...u[focus], time: -1 }; return u; });
       }
     };
-    window.addEventListener("keydown", handleKey);
-    return () => window.removeEventListener("keydown", handleKey);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
   });
 
-  /* ---------------------------------------------------------------- */
-  /*  Auto-scroll to focused line                                      */
-  /* ---------------------------------------------------------------- */
+  // Auto-scroll focused line
   useEffect(() => {
-    if (activeTab === "editor" && lrcListRef.current && focusLine >= 0) {
-      const el = lrcListRef.current.children[focusLine] as HTMLElement;
-      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    if (tab === "editor" && listRef.current && focus >= 0) {
+      const el = listRef.current.children[focus] as HTMLElement;
+      el?.scrollIntoView({ behavior: "smooth", block: "center" });
     }
-  }, [focusLine, activeTab]);
+  }, [focus, tab]);
 
-  /* ---------------------------------------------------------------- */
-  /*  Player helpers                                                   */
-  /* ---------------------------------------------------------------- */
+  // ─── Play / Pause ────────────────────────────────────────────────
   const togglePlay = () => {
-    if (!audioRef.current) return;
-    if (playing) {
-      audioRef.current.pause();
-    } else {
-      audioRef.current.play();
-    }
-    setPlaying(!playing);
+    const a = audioRef.current;
+    if (!a) return;
+    if (a.paused) { a.play(); } else { a.pause(); }
   };
 
-  const seekTo = (time: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = time;
-      setCurrentTime(time);
-    }
+  // ─── Seek (called from clicking lyric lines) ────────────────────
+  const seekTo = (t: number) => {
+    const a = audioRef.current;
+    if (!a) return;
+    a.currentTime = t;
+    setTime(t);
   };
 
-  /* --- Timeline slider seeking (fix for drag-while-playing) --- */
-  const handleSliderPointerDown = () => {
-    seekingRef.current = true;
-    wasPlayingRef.current = playing;
-    if (audioRef.current && playing) {
-      audioRef.current.pause();
-    }
+  // ─── CRITICAL: Slider seeking handlers ───────────────────────────
+  // These three functions work together to prevent the "jump back" bug:
+  //
+  // 1. onMouseDown/onTouchStart: mark seeking=true, pause audio
+  // 2. onChange: update React state + audio.currentTime
+  // 3. onMouseUp/onTouchEnd: mark seeking=false, resume if was playing
+  //
+  // The timeupdate handler checks isSeeking.current and skips updates
+  // when true. This prevents React state from being overwritten.
+
+  const onSliderDown = useCallback(() => {
+    isSeeking.current = true;
+    const a = audioRef.current;
+    wasPlaying.current = a ? !a.paused : false;
+    if (a && !a.paused) a.pause();
+  }, []);
+
+  const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    setTime(v);
+    const a = audioRef.current;
+    if (a) a.currentTime = v;
+  }, []);
+
+  const onSliderUp = useCallback(() => {
+    // Small delay to let the audio element settle at the new position
+    // before re-enabling timeupdate updates
+    setTimeout(() => {
+      isSeeking.current = false;
+      const a = audioRef.current;
+      if (wasPlaying.current && a) a.play();
+    }, 50);
+  }, []);
+
+  // ─── Stamp ───────────────────────────────────────────────────────
+  const stamp = () => {
+    const a = audioRef.current;
+    if (!a || !lines.length) return;
+    const t = parseFloat(a.currentTime.toFixed(2));
+    setLines(p => { const u = [...p]; u[focus] = { ...u[focus], time: t }; return u; });
+    setFocus(f => Math.min(f + 1, lines.length - 1));
   };
 
-  const handleSliderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const val = parseFloat(e.target.value);
-    setCurrentTime(val);
-    if (audioRef.current) {
-      audioRef.current.currentTime = val;
-    }
-  };
-
-  const handleSliderPointerUp = () => {
-    seekingRef.current = false;
-    if (wasPlayingRef.current && audioRef.current) {
-      audioRef.current.play();
-      setPlaying(true);
-    }
-  };
-
-  /* ---------------------------------------------------------------- */
-  /*  Stamp helpers                                                    */
-  /* ---------------------------------------------------------------- */
-  const stampCurrentLine = () => {
-    if (!audioRef.current || lrcLines.length === 0) return;
-    const t = audioRef.current.currentTime;
-    setLrcLines((prev) => {
-      const updated = [...prev];
-      updated[focusLine] = { ...updated[focusLine], time: parseFloat(t.toFixed(2)) };
-      return updated;
-    });
-    setFocusLine((prev) => Math.min(prev + 1, lrcLines.length - 1));
-  };
-
-  /* ---------------------------------------------------------------- */
-  /*  Visual config                                                    */
-  /* ---------------------------------------------------------------- */
-  const handleVisualConfigChange = (cfg: VisualConfig) => {
-    setVisualConfig(cfg);
-    setConfigDirty(true);
-    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      if (name) {
-        api
-          .updateProject(name, { visual_config: cfg })
-          .then(() => {
-            setConfigDirty(false);
-          })
-          .catch(() => {
-            addToast("Failed to save visual config", "error");
-          });
-      }
+  // ─── Visual config (debounced save) ──────────────────────────────
+  const onCfgChange = (c: VisualConfig) => {
+    setCfg(c);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      if (name) api.updateProject(name, { visual_config: c }).catch(() => {});
     }, 800);
   };
 
-  /* ---------------------------------------------------------------- */
-  /*  File uploads (with spinner overlay)                               */
-  /* ---------------------------------------------------------------- */
-  const handleFileUpload = async (type: "audio" | "lyrics" | "cover", file: File) => {
+  // ─── File uploads ────────────────────────────────────────────────
+  const upload = async (type: "audio" | "lyrics" | "cover", file: File) => {
     if (!name) return;
-    setUploading(true);
+    setBusy(`Uploading ${type}...`);
     try {
-      if (type === "audio") {
+      if (type === "lyrics") {
+        const r = await api.uploadLyrics(name, file);
+        setLines(parseAnyLyrics(r.content));
+        toast(r.format === "lrc" ? "LRC imported with timestamps" : "Lyrics loaded", "ok");
+      } else if (type === "audio") {
         await api.uploadAudio(name, file);
-        addToast("Audio uploaded successfully", "success");
-      } else if (type === "lyrics") {
-        const result = await api.uploadLyrics(name, file);
-        const parsed = parseAnyLyrics(result.content);
-        setLrcLines(parsed);
-        if (result.format === "lrc") {
-          addToast("LRC imported with timestamps", "success");
-        } else {
-          addToast("Plain lyrics loaded -- use editor to set timestamps", "info", 4000);
-        }
-        setUploading(false);
-        await loadProject();
-        return;
+        toast("Audio uploaded", "ok");
       } else {
         await api.uploadCover(name, file);
-        addToast("Cover art uploaded", "success");
+        toast("Cover uploaded", "ok");
       }
-      await loadProject();
-    } catch (e: any) {
-      addToast(e.message || "Upload failed", "error", 5000);
-    }
-    setUploading(false);
+      await load();
+    } catch (e: any) { toast(e.message, "err"); }
+    setBusy("");
   };
 
-  /* ---------------------------------------------------------------- */
-  /*  Save / export                                                    */
-  /* ---------------------------------------------------------------- */
-  const handleSaveLrc = async () => {
+  const saveLrc = async () => {
     if (!name) return;
-    const content = lrcLinesToString(lrcLines);
-    if (!content.trim()) {
-      addToast("No timestamps set yet", "info");
-      return;
-    }
+    const c = lrcLinesToString(lines);
+    if (!c.trim()) { toast("No timestamps set", "err"); return; }
     try {
-      await api.saveLrc(name, content);
-      await loadProject();
-      addToast("LRC saved successfully", "success");
-    } catch (e: any) {
-      addToast(e.message || "Failed to save LRC", "error");
-    }
+      await api.saveLrc(name, c);
+      await load();
+      toast("Saved", "ok");
+    } catch (e: any) { toast(e.message, "err"); }
   };
 
-  const handleRender = async () => {
+  const handleTimeEdit = (i: number, v: string) => {
+    if (v === "--:--.--") return;
+    const m = v.match(/^(\d{1,2}):(\d{1,2}(?:\.\d*)?)$/);
+    if (!m) return;
+    const t = parseInt(m[1]) * 60 + parseFloat(m[2]);
+    setLines(p => { const u = [...p]; u[i] = { ...u[i], time: t }; return u; });
+  };
+
+  const doExport = async () => {
     if (!name) return;
-    try {
-      await api.updateProject(name, { visual_config: visualConfig });
-      if (lrcLines.some((l) => l.time >= 0)) {
-        await api.saveLrc(name, lrcLinesToString(lrcLines));
-      }
-      addToast("Config saved. Run: python render.py " + name, "success", 6000);
-    } catch (e: any) {
-      addToast(e.message || "Failed to export", "error");
-    }
+    await api.updateProject(name, { visual_config: cfg });
+    if (lines.some(l => l.time >= 0)) await api.saveLrc(name, lrcLinesToString(lines));
+    toast("Saved. Run: python render.py " + name, "ok");
   };
 
-  const handleTimeChange = (index: number, value: string) => {
-    if (value === "--:--.--") return;
-    const match = value.match(/^(\d{1,2}):(\d{1,2}(?:\.\d*)?)$/);
-    if (!match) return;
-    const time = parseInt(match[1]) * 60 + parseFloat(match[2]);
-    const updated = [...lrcLines];
-    updated[index] = { ...updated[index], time };
-    setLrcLines(updated);
-  };
-
-  const handleClearTimestamps = () => {
-    setLrcLines((prev) => prev.map((l) => ({ ...l, time: -1 })));
-    setFocusLine(0);
-    addToast("All timestamps cleared", "info");
-  };
-
-  /* ---------------------------------------------------------------- */
-  /*  Derived values                                                   */
-  /* ---------------------------------------------------------------- */
-  const stampedCount = lrcLines.filter((l) => l.time >= 0).length;
-  const filteredLines = lrcLines.filter((l) => l.time >= 0);
-
-  /* ---------------------------------------------------------------- */
-  /*  Loading screen                                                   */
-  /* ---------------------------------------------------------------- */
-  if (!project) {
-    return (
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          minHeight: "100vh",
-          background: "#0a0a0f",
-          color: "#666",
-          gap: 16,
-        }}
-      >
-        <SpinnerSvg />
-        <span style={{ fontSize: 14 }}>Loading project...</span>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    );
-  }
+  // ─── Derived ─────────────────────────────────────────────────────
+  if (!project) return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0a0a0f", color: "#555" }}>
+      Loading project...
+    </div>
+  );
 
   const audioUrl = project.audio_file ? `/static/projects/${name}/audio/${project.audio_file}` : null;
   const coverUrl = project.cover_file ? `/static/projects/${name}/assets/${project.cover_file}` : null;
+  const stamped = lines.filter(l => l.time >= 0).length;
+  const stampedLines = lines.filter(l => l.time >= 0);
 
-  /* ================================================================ */
-  /*  RENDER                                                           */
-  /* ================================================================ */
+  // ─── Render ──────────────────────────────────────────────────────
   return (
-    <div style={s.page}>
-      {/* Global keyframes */}
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes toastIn {
-          from { opacity: 0; transform: translateX(60px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes toastOut {
-          from { opacity: 1; }
-          to   { opacity: 0; transform: translateX(60px); }
-        }
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-      `}</style>
+    <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0a0a0f", color: "#ccc", overflow: "hidden" }}>
 
-      {/* ==================== TOAST NOTIFICATIONS ==================== */}
-      <div
-        style={{
-          position: "fixed",
-          top: 16,
-          right: 16,
-          zIndex: 9999,
-          display: "flex",
-          flexDirection: "column",
-          gap: 8,
-          pointerEvents: "none",
-        }}
-      >
-        {toasts.map((toast) => {
-          const bg =
-            toast.type === "success"
-              ? "linear-gradient(135deg, #1a3a1a, #1e2e1e)"
-              : toast.type === "error"
-                ? "linear-gradient(135deg, #3a1a1a, #2e1e1e)"
-                : "linear-gradient(135deg, #1a1a3a, #1e1e2e)";
-          const borderColor =
-            toast.type === "success"
-              ? "#2a5a2a"
-              : toast.type === "error"
-                ? "#5a2a2a"
-                : "#2a2a5a";
-          const textColor =
-            toast.type === "success"
-              ? "#8fdf8f"
-              : toast.type === "error"
-                ? "#f08080"
-                : "#8f8fdf";
-          const icon =
-            toast.type === "success"
-              ? "\u2713"
-              : toast.type === "error"
-                ? "\u2717"
-                : "\u2139";
-          return (
-            <div
-              key={toast.id}
-              style={{
-                background: bg,
-                border: `1px solid ${borderColor}`,
-                borderRadius: 10,
-                padding: "10px 18px",
-                color: textColor,
-                fontSize: 13,
-                fontWeight: 500,
-                maxWidth: 360,
-                boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-                animation: "toastIn 0.3s ease-out",
-                pointerEvents: "auto",
-                display: "flex",
-                alignItems: "center",
-                gap: 10,
-                backdropFilter: "blur(12px)",
-              }}
-            >
-              <span style={{ fontSize: 16, lineHeight: 1 }}>{icon}</span>
-              <span>{toast.message}</span>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* ==================== UPLOAD SPINNER OVERLAY ==================== */}
-      {uploading && (
-        <div
-          style={{
-            position: "fixed",
-            inset: 0,
-            zIndex: 9000,
-            background: "rgba(0,0,0,0.6)",
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: 16,
-            backdropFilter: "blur(4px)",
-            animation: "fadeIn 0.2s ease-out",
-          }}
-        >
-          <SpinnerSvg />
-          <span style={{ color: "#aaa", fontSize: 14, fontWeight: 500 }}>Uploading...</span>
-        </div>
-      )}
-
-      {/* ==================== TOP BAR ==================== */}
-      <div style={s.topBar}>
-        <button
-          style={s.backBtn}
-          onClick={() => navigate("/")}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.color = "#ccc")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.color = "#888")}
-        >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="19" y1="12" x2="5" y2="12" />
-            <polyline points="12 19 5 12 12 5" />
-          </svg>
-          Back
+      {/* ── Top bar ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 20px", background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
+        <button onClick={() => nav("/")} style={{ background: "none", border: "none", color: "#777", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+          <span style={{ fontSize: 18 }}>&larr;</span> Projects
         </button>
-        <div style={s.songInfo}>
-          {project.title} - {project.artist}
-        </div>
-        <div style={{ fontSize: 12, color: "#888", display: "flex", alignItems: "center", gap: 8 }}>
-          {configDirty && (
-            <span
-              style={{
-                color: "#f0ad4e",
-                fontSize: 11,
-                background: "#2a2510",
-                padding: "2px 8px",
-                borderRadius: 4,
-                border: "1px solid #4a3a10",
-              }}
-            >
-              unsaved
-            </span>
-          )}
-        </div>
+        <div style={{ color: "#eee", fontWeight: 600, fontSize: 15 }}>{project.title} <span style={{ color: "#555", fontWeight: 400 }}>by {project.artist}</span></div>
+        <div style={{ width: 80 }} />
       </div>
 
-      <div style={s.body}>
-        {/* ==================== LEFT SIDEBAR ==================== */}
-        <div style={s.sidebar}>
-          {/* --- Audio --- */}
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Audio</div>
-            {project.audio_file ? (
-              <div
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 8,
-                  fontSize: 12,
-                  color: "#7ec87e",
-                  marginBottom: 8,
-                  background: "#0e1a0e",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #1a2a1a",
-                }}
-              >
-                <IconMusic />
-                <div>
-                  <div style={{ fontWeight: 500 }}>{project.audio_file}</div>
-                  {project.duration != null && (
-                    <div style={{ color: "#5a8a5a", fontSize: 11, marginTop: 2 }}>
-                      {project.duration.toFixed(1)}s
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <label style={s.fileLabel}>
-                <IconUpload />
-                <span>Drop or click to upload audio</span>
-                <span style={{ fontSize: 10, color: "#444" }}>MP3, WAV, FLAC</span>
-                <input
-                  type="file"
-                  accept="audio/*"
-                  hidden
-                  onChange={(e) => e.target.files?.[0] && handleFileUpload("audio", e.target.files[0])}
-                />
-              </label>
-            )}
-          </div>
+      {/* ── Body ── */}
+      <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
 
-          {/* --- Lyrics --- */}
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Lyrics</div>
-            {lrcLines.length > 0 ? (
-              <div
-                style={{
-                  background: "#0e1a0e",
-                  padding: "8px 12px",
-                  borderRadius: 6,
-                  border: "1px solid #1a2a1a",
-                  marginBottom: 8,
-                }}
-              >
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#7ec87e" }}>
-                  <IconLyrics />
-                  <span style={{ fontWeight: 500 }}>{lrcLines.length} lines loaded</span>
+        {/* ── Left sidebar ── */}
+        <div style={{ width: 260, background: "#111118", borderRight: "1px solid #1c1c28", padding: 16, overflowY: "auto", flexShrink: 0 }}>
+
+          {/* Audio */}
+          <Section title="Audio">
+            {project.audio_file ? (
+              <Info icon="&#9835;" text={`${project.audio_file} (${project.duration?.toFixed(1)}s)`} color="#6fcf70" />
+            ) : (
+              <UploadBox label="Upload audio" accept="audio/*" onFile={f => upload("audio", f)} />
+            )}
+          </Section>
+
+          {/* Lyrics */}
+          <Section title="Lyrics">
+            {lines.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "#888", marginBottom: 4 }}>
+                  <span>{lines.length} lines</span>
+                  <span style={{ color: stamped === lines.length ? "#6fcf70" : "#888" }}>{stamped}/{lines.length} timed</span>
                 </div>
-                <div style={{ fontSize: 11, color: "#5a8a5a", marginTop: 4, marginLeft: 24 }}>
-                  {stampedCount}/{lrcLines.length} timestamped
-                </div>
-                {/* Progress bar */}
-                <div
-                  style={{
-                    height: 3,
-                    background: "#1a2a1a",
-                    borderRadius: 2,
-                    marginTop: 6,
-                    marginLeft: 24,
-                    overflow: "hidden",
-                  }}
-                >
-                  <div
-                    style={{
-                      height: "100%",
-                      width: `${lrcLines.length > 0 ? (stampedCount / lrcLines.length) * 100 : 0}%`,
-                      background: "#4caf50",
-                      borderRadius: 2,
-                      transition: "width 0.3s",
-                    }}
-                  />
+                <div style={{ height: 3, background: "#1a1a2a", borderRadius: 2 }}>
+                  <div style={{ height: "100%", width: `${(stamped / lines.length) * 100}%`, background: "#6c5ce7", borderRadius: 2, transition: "width 0.3s" }} />
                 </div>
               </div>
-            ) : null}
-            <label style={s.fileLabel}>
-              <IconUpload />
-              <span>Upload lyrics (.txt or .lrc)</span>
-              <input
-                type="file"
-                accept=".txt,.lrc"
-                hidden
-                onChange={(e) => e.target.files?.[0] && handleFileUpload("lyrics", e.target.files[0])}
-              />
-            </label>
-            {lrcLines.length > 0 && (
+            )}
+            <UploadBox label="Upload lyrics (.txt / .lrc)" accept=".txt,.lrc" onFile={f => upload("lyrics", f)} />
+            {lines.length > 0 && (
               <>
-                <button style={s.btn} onClick={handleSaveLrc}>
-                  Save LRC
-                </button>
-                <button style={s.btnDanger} onClick={handleClearTimestamps}>
-                  Clear All Timestamps
-                </button>
+                <Btn onClick={saveLrc}>Save Timestamps</Btn>
+                <BtnGhost onClick={() => { setLines(p => p.map(l => ({ ...l, time: -1 }))); setFocus(0); }}>Clear All</BtnGhost>
               </>
             )}
-          </div>
+          </Section>
 
-          {/* --- Cover Art --- */}
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Cover Art</div>
+          {/* Cover */}
+          <Section title="Cover">
             {coverUrl ? (
               <>
-                <img
-                  src={coverUrl}
-                  alt="cover"
-                  style={{
-                    width: "100%",
-                    borderRadius: 8,
-                    marginBottom: 8,
-                    boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
-                  }}
-                />
-                <label style={{ ...s.fileLabel, padding: "8px" }}>
-                  <span>Replace cover</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    hidden
-                    onChange={(e) => e.target.files?.[0] && handleFileUpload("cover", e.target.files[0])}
-                  />
-                </label>
+                <img src={coverUrl} alt="" style={{ width: "100%", borderRadius: 8, marginBottom: 8 }} />
+                <UploadBox label="Replace" accept="image/*" onFile={f => upload("cover", f)} small />
               </>
             ) : (
-              <label style={s.fileLabel}>
-                <IconImage />
-                <span>Upload cover image</span>
-                <span style={{ fontSize: 10, color: "#444" }}>PNG, JPG, WEBP</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={(e) => e.target.files?.[0] && handleFileUpload("cover", e.target.files[0])}
-                />
-              </label>
+              <UploadBox label="Upload cover image" accept="image/*" onFile={f => upload("cover", f)} />
             )}
-          </div>
+          </Section>
 
-          {/* --- Export --- */}
-          <div style={s.section}>
-            <div style={s.sectionTitle}>Export</div>
-            <button style={s.btn} onClick={handleRender}>
-              Export Video
-            </button>
-            <button style={s.btnSecondary} onClick={handleSaveLrc}>
-              Save Project
-            </button>
-          </div>
+          {/* Actions */}
+          <Section title="Export">
+            <Btn onClick={doExport}>Export Video</Btn>
+            <BtnGhost onClick={saveLrc}>Save Project</BtnGhost>
+          </Section>
 
-          {/* --- Shortcuts hint (editor tab only) --- */}
-          {activeTab === "editor" && (
-            <div
-              style={{
-                fontSize: 11,
-                color: "#444",
-                lineHeight: 1.7,
-                padding: "12px 0",
-                borderTop: "1px solid #1a1a2a",
-              }}
-            >
-              <div style={{ color: "#666", marginBottom: 6, fontWeight: 600, letterSpacing: 0.5 }}>Shortcuts</div>
-              <div>
-                <span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>Space</span> Play / Pause
-              </div>
-              <div>
-                <span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>Enter</span> Stamp current line
-              </div>
-              <div>
-                <span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>Up/Down</span> Navigate lines
-              </div>
-              <div>
-                <span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>Ctrl+Bksp</span> Clear timestamp
-              </div>
-              <div>
-                <span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>Click</span> Stamp + advance
-              </div>
+          {/* Shortcuts hint */}
+          {tab === "editor" && (
+            <div style={{ fontSize: 11, color: "#444", lineHeight: 1.7, marginTop: 8, borderTop: "1px solid #1a1a28", paddingTop: 12 }}>
+              <Shortcut k="Space" d="Play / Pause" />
+              <Shortcut k="Enter" d="Stamp line" />
+              <Shortcut k="&#8593;&#8595;" d="Navigate" />
+              <Shortcut k="Ctrl+&#9003;" d="Clear time" />
             </div>
           )}
         </div>
 
-        {/* ==================== CENTER: EDITOR / PREVIEW ==================== */}
-        <div style={s.main}>
+        {/* ── Center ── */}
+        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+
           {/* Tabs */}
-          <div style={s.tabs}>
-            <button
-              style={activeTab === "editor" ? s.tabActive : s.tab}
-              onClick={() => setActiveTab("editor")}
-            >
-              Timing Editor
-            </button>
-            <button
-              style={activeTab === "preview" ? s.tabActive : s.tab}
-              onClick={() => setActiveTab("preview")}
-            >
-              Video Preview
-            </button>
+          <div style={{ display: "flex", background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
+            <Tab active={tab === "editor"} onClick={() => setTab("editor")}>Timing Editor</Tab>
+            <Tab active={tab === "preview"} onClick={() => setTab("preview")}>Video Preview</Tab>
           </div>
 
-          {/* Tab content with transition wrapper */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", position: "relative" }}>
-            {/* --- EDITOR TAB --- */}
-            <div
-              style={{
-                ...s.editorArea,
-                position: "absolute",
-                inset: 0,
-                opacity: activeTab === "editor" ? 1 : 0,
-                pointerEvents: activeTab === "editor" ? "auto" : "none",
-                transition: "opacity 0.25s ease-in-out",
-                zIndex: activeTab === "editor" ? 1 : 0,
-              }}
-            >
-              <div style={s.lrcList} ref={lrcListRef}>
-                {lrcLines.length === 0 ? (
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: "60px 20px",
-                      gap: 12,
-                    }}
-                  >
-                    <IconEmpty />
-                    <div style={{ color: "#444", fontSize: 15, fontWeight: 500 }}>No lyrics loaded</div>
-                    <div style={{ color: "#333", fontSize: 12, textAlign: "center", maxWidth: 280, lineHeight: 1.6 }}>
-                      Upload a lyrics file (.txt or .lrc) from the sidebar to start timing your song.
-                    </div>
-                  </div>
-                ) : (
-                  lrcLines.map((line, i) => {
-                    const isFocused = i === focusLine;
-                    const isActive = i === activeLine;
-                    const hasTime = line.time >= 0;
-                    return (
-                      <div
-                        key={i}
+          {/* Tab content */}
+          <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
+
+            {/* Editor */}
+            <div style={{ position: "absolute", inset: 0, display: tab === "editor" ? "flex" : "none", flexDirection: "column" }}>
+              <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "10px 16px" }}>
+                {lines.length === 0 ? (
+                  <Empty icon="&#128196;" text="Upload a lyrics file to start timing" />
+                ) : lines.map((line, i) => {
+                  const focused = i === focus;
+                  const active = i === activeLine;
+                  const has = line.time >= 0;
+                  return (
+                    <div key={i}
+                      onClick={() => {
+                        if (playing && audioRef.current) {
+                          const t = parseFloat(audioRef.current.currentTime.toFixed(2));
+                          setLines(p => { const u = [...p]; u[i] = { ...u[i], time: t }; return u; });
+                          setFocus(Math.min(i + 1, lines.length - 1));
+                        } else {
+                          setFocus(i);
+                          if (has) seekTo(line.time);
+                        }
+                      }}
+                      style={{
+                        display: "flex", alignItems: "center", padding: "7px 10px",
+                        borderRadius: 6, marginBottom: 1, cursor: "pointer",
+                        background: focused ? "rgba(108,92,231,0.12)" : active ? "rgba(108,92,231,0.06)" : "transparent",
+                        borderLeft: focused ? "3px solid #6c5ce7" : "3px solid transparent",
+                        transition: "background 0.1s",
+                      }}
+                    >
+                      <input
                         style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "8px 12px",
-                          borderRadius: 6,
-                          marginBottom: 2,
-                          cursor: "pointer",
-                          transition: "background 0.12s, border-color 0.12s",
-                          background: isFocused
-                            ? "#141430"
-                            : isActive
-                              ? "#121228"
-                              : i % 2 === 0
-                                ? "#0c0c14"
-                                : "transparent",
-                          borderLeft: isFocused
-                            ? "3px solid #6c5ce7"
-                            : isActive
-                              ? "3px solid #3a3a6a"
-                              : "3px solid transparent",
+                          width: 76, background: "#0c0c16", border: `1px solid ${has ? "#253025" : "#302525"}`,
+                          borderRadius: 4, color: has ? "#6fcf70" : "#554", padding: "3px 6px",
+                          fontSize: 11, fontFamily: "monospace", textAlign: "center", outline: "none",
                         }}
-                        onClick={() => {
-                          if (playing && audioRef.current) {
-                            const t = parseFloat(audioRef.current.currentTime.toFixed(2));
-                            setLrcLines((prev) => {
-                              const updated = [...prev];
-                              updated[i] = { ...updated[i], time: t };
-                              return updated;
-                            });
-                            setFocusLine(Math.min(i + 1, lrcLines.length - 1));
-                          } else {
-                            setFocusLine(i);
-                            if (hasTime) seekTo(line.time);
-                          }
-                        }}
-                      >
-                        {/* Timestamp */}
-                        <input
-                          style={{
-                            width: 80,
-                            background: "#08080f",
-                            border: `1px solid ${hasTime ? "#1a2a1a" : "#2a1a1a"}`,
-                            borderRadius: 4,
-                            color: hasTime ? "#7ec87e" : "#554",
-                            padding: "4px 8px",
-                            fontSize: 12,
-                            marginRight: 12,
-                            fontFamily: "monospace",
-                            textAlign: "center" as const,
-                            outline: "none",
-                            transition: "border-color 0.15s",
-                          }}
-                          value={formatTime(line.time)}
-                          onChange={(e) => handleTimeChange(i, e.target.value)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                        {/* Line number */}
-                        <span
-                          style={{
-                            width: 28,
-                            fontSize: 11,
-                            color: "#333",
-                            textAlign: "right" as const,
-                            marginRight: 10,
-                            flexShrink: 0,
-                            fontFamily: "monospace",
-                          }}
-                        >
-                          {i + 1}
-                        </span>
-                        {/* Lyric text */}
-                        <span
-                          style={{
-                            color: isFocused ? "#fff" : isActive ? "#ddd" : "#888",
-                            fontSize: isFocused ? 15 : 14,
-                            fontWeight: isFocused ? 600 : 400,
-                            transition: "all 0.15s",
-                            flex: 1,
-                          }}
-                        >
-                          {line.text}
-                        </span>
-                        {/* Status dot */}
-                        <span
-                          style={{
-                            width: 8,
-                            height: 8,
-                            borderRadius: "50%",
-                            flexShrink: 0,
-                            background: hasTime ? "#4caf50" : "#252525",
-                            transition: "background 0.2s",
-                            boxShadow: hasTime ? "0 0 6px rgba(76,175,80,0.4)" : "none",
-                          }}
-                        />
-                      </div>
-                    );
-                  })
-                )}
+                        value={formatTime(line.time)}
+                        onChange={e => handleTimeEdit(i, e.target.value)}
+                        onClick={e => e.stopPropagation()}
+                      />
+                      <span style={{ width: 28, fontSize: 10, color: "#333", textAlign: "right", margin: "0 8px", flexShrink: 0 }}>{i + 1}</span>
+                      <span style={{
+                        flex: 1, fontSize: focused ? 14 : 13,
+                        color: focused ? "#eee" : active ? "#ccc" : "#888",
+                        fontWeight: focused ? 600 : 400,
+                      }}>
+                        {line.text}
+                      </span>
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", background: has ? "#4caf50" : "#2a2a2a", flexShrink: 0 }} />
+                    </div>
+                  );
+                })}
               </div>
             </div>
 
-            {/* --- PREVIEW TAB --- */}
-            <div
-              style={{
-                ...s.previewContainer,
-                position: "absolute",
-                inset: 0,
-                opacity: activeTab === "preview" ? 1 : 0,
-                pointerEvents: activeTab === "preview" ? "auto" : "none",
-                transition: "opacity 0.25s ease-in-out",
-                zIndex: activeTab === "preview" ? 1 : 0,
-              }}
-            >
-              {filteredLines.length > 0 ? (
-                <LyricVideoPreview
-                  project={project}
-                  lrcLines={filteredLines}
-                  currentTime={currentTime}
-                  coverUrl={coverUrl}
-                  visualConfig={visualConfig}
-                />
+            {/* Preview */}
+            <div style={{ position: "absolute", inset: 0, display: tab === "preview" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#060609" }}>
+              {stampedLines.length > 0 ? (
+                <LyricVideoPreview project={project} lrcLines={stampedLines} currentTime={time} coverUrl={coverUrl} visualConfig={cfg} />
               ) : (
-                <div
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 12,
-                  }}
-                >
-                  <IconVideoOff />
-                  <div style={{ color: "#444", fontSize: 15, fontWeight: 500 }}>No timestamps set yet</div>
-                  <div style={{ color: "#333", fontSize: 12, textAlign: "center", maxWidth: 280, lineHeight: 1.6 }}>
-                    Switch to the Timing Editor tab and record timestamps to see a preview of your lyric video.
-                  </div>
-                </div>
+                <Empty icon="&#127916;" text="Set timestamps in the Timing Editor to preview" />
               )}
             </div>
           </div>
 
-          {/* ==================== AUDIO PLAYER BAR ==================== */}
+          {/* ── Audio bar ── */}
           {audioUrl && (
-            <div style={s.audioBar}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 20px", background: "#0c0c14", borderTop: "1px solid #1c1c28", flexShrink: 0 }}>
               <audio ref={audioRef} src={audioUrl} preload="auto" />
-              <button
-                style={s.playBtn}
-                onClick={togglePlay}
-                onMouseEnter={(e) => ((e.currentTarget as HTMLElement).style.background = "#7c6cf7")}
-                onMouseLeave={(e) => ((e.currentTarget as HTMLElement).style.background = "#6c5ce7")}
-              >
+
+              {/* Play button */}
+              <button onClick={togglePlay} style={{
+                width: 34, height: 34, borderRadius: "50%", border: "none",
+                background: "#6c5ce7", color: "#fff", cursor: "pointer",
+                display: "flex", alignItems: "center", justifyContent: "center",
+                fontSize: 14, flexShrink: 0,
+              }}>
                 {playing ? "\u275A\u275A" : "\u25B6"}
               </button>
-              <span style={s.timeDisplay}>{formatTime(currentTime)}</span>
+
+              {/* Current time */}
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#888", minWidth: 72 }}>
+                {formatTime(time)}
+              </span>
+
+              {/* ── THE SLIDER ── */}
+              {/* onMouseDown+onTouchStart: mark seeking, pause audio */}
+              {/* onChange: update time state + audio.currentTime */}
+              {/* onMouseUp+onTouchEnd: unmark seeking (with 50ms delay), resume */}
               <input
                 type="range"
                 min={0}
                 max={project.duration || 100}
                 step={0.01}
-                value={currentTime}
-                onChange={handleSliderChange}
-                onMouseDown={handleSliderPointerDown}
-                onMouseUp={handleSliderPointerUp}
-                onTouchStart={handleSliderPointerDown}
-                onTouchEnd={handleSliderPointerUp}
-                style={s.slider}
+                value={time}
+                onChange={onSliderChange}
+                onMouseDown={onSliderDown}
+                onMouseUp={onSliderUp}
+                onTouchStart={onSliderDown}
+                onTouchEnd={onSliderUp}
+                style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }}
               />
-              <span style={s.timeDisplay}>{formatTime(project.duration || 0)}</span>
+
+              {/* Duration */}
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#555", minWidth: 72 }}>
+                {formatTime(project.duration || 0)}
+              </span>
             </div>
           )}
         </div>
 
-        {/* ==================== RIGHT PANEL: VISUAL EDITOR ==================== */}
-        <div style={s.rightPanel}>
-          <div
-            style={{
-              padding: "12px 20px",
-              borderBottom: "1px solid #1e1e2a",
-              fontSize: 11,
-              color: "#666",
-              textTransform: "uppercase" as const,
-              letterSpacing: 1.2,
-              fontWeight: 600,
-            }}
-          >
+        {/* ── Right panel ── */}
+        <div style={{ width: 300, background: "#111118", borderLeft: "1px solid #1c1c28", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          <div style={{ padding: "10px 16px", borderBottom: "1px solid #1c1c28", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 600 }}>
             Visual Settings
           </div>
           <div style={{ flex: 1, overflow: "hidden" }}>
-            <VisualEditor config={visualConfig} onChange={handleVisualConfigChange} />
+            <VisualEditor config={cfg} onChange={onCfgChange} />
           </div>
         </div>
       </div>
+
+      {/* ── Toasts ── */}
+      <div style={{ position: "fixed", top: 16, right: 16, zIndex: 999, display: "flex", flexDirection: "column", gap: 8 }}>
+        {toasts.map(t => (
+          <div key={t.id} style={{
+            padding: "10px 16px", borderRadius: 8, fontSize: 13,
+            background: t.type === "ok" ? "#1a3a1a" : t.type === "err" ? "#3a1a1a" : "#1a1a3a",
+            color: t.type === "ok" ? "#7ecf7e" : t.type === "err" ? "#cf7e7e" : "#9e9eff",
+            border: `1px solid ${t.type === "ok" ? "#2a4a2a" : t.type === "err" ? "#4a2a2a" : "#2a2a4a"}`,
+            animation: "fadeIn 0.2s ease",
+            maxWidth: 320,
+          }}>
+            {t.msg}
+          </div>
+        ))}
+      </div>
+
+      {/* ── Loading overlay ── */}
+      {busy && (
+        <div style={{
+          position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 998, color: "#888", fontSize: 14,
+        }}>
+          {busy}
+        </div>
+      )}
     </div>
+  );
+}
+
+// ─── Small UI components ─────────────────────────────────────────────
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8, fontWeight: 600 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+function UploadBox({ label, accept, onFile, small }: { label: string; accept: string; onFile: (f: File) => void; small?: boolean }) {
+  return (
+    <label style={{
+      display: "block", background: "#0c0c16", border: "1px dashed #2a2a3a",
+      borderRadius: 8, padding: small ? "8px" : "14px",
+      textAlign: "center", cursor: "pointer", color: "#555", fontSize: 12, marginBottom: 8,
+      transition: "border-color 0.2s",
+    }}>
+      {label}
+      <input type="file" accept={accept} hidden onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
+    </label>
+  );
+}
+
+function Btn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      width: "100%", padding: "8px 14px", borderRadius: 6, border: "none",
+      background: "#6c5ce7", color: "#fff", fontSize: 12, fontWeight: 500,
+      cursor: "pointer", marginBottom: 6, transition: "background 0.15s",
+    }}>
+      {children}
+    </button>
+  );
+}
+
+function BtnGhost({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      width: "100%", padding: "7px 14px", borderRadius: 6,
+      border: "1px solid #2a2a3a", background: "transparent",
+      color: "#888", fontSize: 12, cursor: "pointer", marginBottom: 6,
+    }}>
+      {children}
+    </button>
+  );
+}
+
+function Info({ icon, text, color }: { icon: string; text: string; color: string }) {
+  return (
+    <div style={{ fontSize: 12, color, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+      <span>{icon}</span> {text}
+    </div>
+  );
+}
+
+function Tab({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
+  return (
+    <button onClick={onClick} style={{
+      padding: "10px 20px", border: "none", background: "none",
+      color: active ? "#fff" : "#666", fontSize: 13, fontWeight: 500,
+      cursor: "pointer", borderBottom: active ? "2px solid #6c5ce7" : "2px solid transparent",
+      transition: "color 0.15s",
+    }}>
+      {children}
+    </button>
+  );
+}
+
+function Empty({ icon, text }: { icon: string; text: string }) {
+  return (
+    <div style={{ textAlign: "center", padding: 40, color: "#444" }}>
+      <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>{icon}</div>
+      <div style={{ fontSize: 13 }}>{text}</div>
+    </div>
+  );
+}
+
+function Shortcut({ k, d }: { k: string; d: string }) {
+  return (
+    <div><span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>{k}</span> {d}</div>
   );
 }
