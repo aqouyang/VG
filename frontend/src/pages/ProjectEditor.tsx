@@ -223,10 +223,29 @@ export default function ProjectEditor() {
   const togglePlay = () => {
     const a = audioRef.current; if (!a) return;
     if (a.paused) {
-      // Sync to authoritative position, then play.
-      // seekTarget blocks timeupdate until audio confirms the position.
-      performSeek(timeRef.current);
-      a.play();
+      // Set the audio position first, then wait for the browser to
+      // confirm the seek before starting playback. Without this,
+      // some browsers start playback from 0 if the seek hasn't
+      // completed when play() is called.
+      const target = timeRef.current;
+      performSeek(target);
+      if (Math.abs(a.currentTime - target) < 0.1) {
+        // Already at target, play immediately
+        a.play();
+      } else {
+        // Wait for the audio element to confirm the seek
+        const onSeeked = () => {
+          a.removeEventListener("seeked", onSeeked);
+          a.play();
+        };
+        a.addEventListener("seeked", onSeeked);
+        a.currentTime = target;
+        // Safety timeout in case seeked never fires
+        setTimeout(() => {
+          a.removeEventListener("seeked", onSeeked);
+          if (a.paused) a.play();
+        }, 300);
+      }
     } else {
       a.pause();
     }
@@ -251,7 +270,19 @@ export default function ProjectEditor() {
       const a = audioRef.current;
       if (a) {
         a.currentTime = finalTime;
-        if (wasPlaying.current) a.play();
+        if (wasPlaying.current) {
+          // Wait for seek to complete before resuming playback
+          const onSeeked = () => {
+            a.removeEventListener("seeked", onSeeked);
+            a.play();
+          };
+          a.addEventListener("seeked", onSeeked);
+          // Safety timeout
+          setTimeout(() => {
+            a.removeEventListener("seeked", onSeeked);
+            if (a.paused && wasPlaying.current) a.play();
+          }, 300);
+        }
       }
     }, 150);
   }, [performSeek]);
