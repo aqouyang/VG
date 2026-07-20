@@ -234,19 +234,178 @@ def cmd_render(project_name: str):
     subprocess.run([sys.executable, os.path.join(ROOT, "render.py"), project_name], cwd=ROOT)
 
 
+# ─── FFmpeg management ───────────────────────────────────────────────
+
+def _check_ffmpeg(quiet=False):
+    """Check FFmpeg availability. Returns True if usable."""
+    from ffmpeg_resolver import resolve
+    r = resolve(force_refresh=True)
+    if r["valid"]:
+        if not quiet:
+            ok(f"FFmpeg: {r['version']} ({r['source']})")
+            info(f"  Path: {r['ffmpeg']}")
+            if r["ffprobe"]:
+                info(f"  FFprobe: {r['ffprobe']}")
+        return True
+    return False
+
+
+def _install_ffmpeg_interactive():
+    """Interactive FFmpeg installation flow."""
+    from ffmpeg_resolver import (
+        detect_package_managers, install_via_winget, install_via_choco,
+        install_app_local, add_to_user_path, add_to_process_path, resolve,
+    )
+
+    log("")
+    warn("FFmpeg is required for video export but was not found.")
+    log("")
+
+    answer = input(f"  Would you like Lyric Studio to install it now? [Y/n] ").strip().lower()
+    if answer and answer not in ("y", "yes"):
+        warn("FFmpeg not installed. Export features will be unavailable.")
+        info("To install manually: https://ffmpeg.org/download.html")
+        return False
+
+    managers = detect_package_managers()
+    installed = False
+
+    if "winget" in managers:
+        log(f"\n  {C.DIM}Installing via winget...{C.RESET}")
+        installed = install_via_winget()
+        if installed:
+            ok("FFmpeg installed via winget.")
+    elif "choco" in managers:
+        log(f"\n  {C.DIM}Installing via Chocolatey...{C.RESET}")
+        installed = install_via_choco()
+        if installed:
+            ok("FFmpeg installed via Chocolatey.")
+
+    if not installed:
+        log("")
+        log(f"  {C.DIM}No package manager available (winget or Chocolatey).{C.RESET}")
+        answer2 = input(f"  Install an application-local copy instead? [Y/n] ").strip().lower()
+        if answer2 and answer2 not in ("y", "yes"):
+            warn("FFmpeg not installed.")
+            return False
+
+        log(f"\n  {C.DIM}Downloading FFmpeg (this may take a minute)...{C.RESET}")
+        try:
+            install_app_local(on_progress=lambda msg: info(msg))
+            ok("FFmpeg installed to application data directory.")
+            installed = True
+        except Exception as e:
+            err(f"Installation failed: {e}")
+            return False
+
+    if not installed:
+        return False
+
+    # Re-detect and add to PATH
+    r = resolve(force_refresh=True)
+    if r["valid"]:
+        ffmpeg_dir = os.path.dirname(r["ffmpeg"])
+        add_to_process_path(ffmpeg_dir)
+
+        if sys.platform == "win32" and r["source"] != "app-local":
+            add_to_user_path(ffmpeg_dir)
+            ok("Added to user PATH.")
+
+        ok(f"FFmpeg {r['version']} ready.")
+
+        # Show encoder capabilities
+        encs = [k for k, v in r["encoders"].items() if v]
+        if encs:
+            info(f"  Encoders: {', '.join(encs)}")
+        if "ass" in r["filters"]:
+            info("  Subtitle filter (libass): available")
+        return True
+
+    err("FFmpeg installed but could not be verified.")
+    return False
+
+
+def cmd_ffmpeg(subcmd: str):
+    """Handle ffmpeg subcommands."""
+    from ffmpeg_resolver import resolve, remove_app_local
+
+    if subcmd == "status":
+        heading("FFmpeg Status")
+        r = resolve(force_refresh=True)
+        if r["valid"]:
+            ok(f"Version: {r['version']}")
+            info(f"FFmpeg:  {r['ffmpeg']}")
+            info(f"FFprobe: {r['ffprobe'] or 'not found'}")
+            info(f"Source:  {r['source']}")
+            log("")
+            info("Filters:")
+            info(f"  libass: {'yes' if 'ass' in r['filters'] else 'no'}")
+            log("")
+            info("Encoders:")
+            for enc, avail in sorted(r["encoders"].items()):
+                status = f"{C.GREEN}yes{C.RESET}" if avail else f"{C.DIM}no{C.RESET}"
+                info(f"  {enc}: {status}")
+        else:
+            err("FFmpeg is not installed.")
+            info("Run: python lyric-studio.py ffmpeg install")
+
+    elif subcmd == "install":
+        heading("FFmpeg Installation")
+        if _check_ffmpeg(quiet=True):
+            r = resolve()
+            ok(f"FFmpeg is already installed ({r['version']}, {r['source']}).")
+            info(f"Path: {r['ffmpeg']}")
+            return
+        _install_ffmpeg_interactive()
+
+    elif subcmd == "repair":
+        heading("FFmpeg Repair")
+        r = resolve(force_refresh=True)
+        if r["valid"]:
+            ok(f"FFmpeg is working ({r['version']}).")
+        else:
+            warn("FFmpeg not found. Attempting repair...")
+            _install_ffmpeg_interactive()
+
+    elif subcmd == "remove-local":
+        heading("Remove Application-Local FFmpeg")
+        r = resolve()
+        if r.get("source") != "app-local":
+            warn("No application-local FFmpeg installation found.")
+            return
+        remove_app_local()
+        ok("Application-local FFmpeg removed.")
+
+    else:
+        err(f"Unknown ffmpeg subcommand: {subcmd}")
+        log(f"""
+{C.BOLD}Usage:{C.RESET} python lyric-studio.py ffmpeg {C.CYAN}<subcommand>{C.RESET}
+
+{C.BOLD}Subcommands:{C.RESET}
+  {C.CYAN}status{C.RESET}       Show FFmpeg path, version, and capabilities
+  {C.CYAN}install{C.RESET}      Install FFmpeg interactively
+  {C.CYAN}repair{C.RESET}       Re-detect and fix FFmpeg configuration
+  {C.CYAN}remove-local{C.RESET} Remove the application-local FFmpeg copy
+""")
+
+
 def cmd_start():
     ensure_data_dirs()
     from migrate import migrate_all_projects
     migrate_all_projects()
 
     heading("Lyric Studio")
+
+    # Check FFmpeg
+    if not _check_ffmpeg(quiet=True):
+        _install_ffmpeg_interactive()
+
     info("Starting servers...")
 
     if sys.platform == "win32":
         script = os.path.join(ROOT, "start.ps1")
         subprocess.run(["powershell", "-ExecutionPolicy", "Bypass", "-File", script])
     else:
-        import signal
         backend = subprocess.Popen(
             [sys.executable, "main.py"],
             cwd=os.path.join(ROOT, "backend")
@@ -272,6 +431,7 @@ def cmd_help():
   {C.CYAN}update{C.RESET}            Update application code safely
   {C.CYAN}backup{C.RESET}            Create a backup of user data
   {C.CYAN}migrate{C.RESET}           Run project schema migrations
+  {C.CYAN}ffmpeg{C.RESET} <sub>      Manage FFmpeg (status, install, repair)
   {C.CYAN}version{C.RESET}           Show current version
 
 {C.BOLD}Update options:{C.RESET}
@@ -305,6 +465,9 @@ def main():
             err("Usage: lyric-studio render <project_name>")
             sys.exit(1)
         cmd_render(sys.argv[2])
+    elif command == "ffmpeg":
+        subcmd = sys.argv[2] if len(sys.argv) > 2 else "status"
+        cmd_ffmpeg(subcmd)
     elif command == "start":
         cmd_start()
     else:

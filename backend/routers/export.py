@@ -119,6 +119,11 @@ def _detect_gpus() -> list[dict]:
 
 def _detect_encoders() -> dict:
     """Check which hardware encoders FFmpeg supports."""
+    from ffmpeg_resolver import resolve as ffmpeg_resolve
+    r = ffmpeg_resolve()
+    if r["valid"] and r["encoders"]:
+        return dict(r["encoders"])
+
     encoders = {
         "h264_nvenc": False, "hevc_nvenc": False,
         "h264_qsv": False, "hevc_qsv": False,
@@ -126,12 +131,12 @@ def _detect_encoders() -> dict:
         "libx264": False, "libx265": False,
     }
     try:
-        r = subprocess.run(
-            ["ffmpeg", "-hide_banner", "-encoders"],
+        ffmpeg_path = r["ffmpeg"] or "ffmpeg"
+        r2 = subprocess.run(
+            [ffmpeg_path, "-hide_banner", "-encoders"],
             capture_output=True, text=True, timeout=10,
-            **({"shell": True} if sys.platform == "win32" else {})
         )
-        output = r.stdout + r.stderr
+        output = r2.stdout + r2.stderr
         for enc in encoders:
             if enc in output:
                 encoders[enc] = True
@@ -183,10 +188,23 @@ def _save_settings(settings: dict):
 
 @router.get("/gpu")
 def detect_gpu():
+    from ffmpeg_resolver import resolve as ffmpeg_resolve
     gpus = _detect_gpus()
     nvidia = _detect_nvidia_smi()
-    encoders = _detect_encoders()
-    return {"gpus": gpus, "nvidia": nvidia, "encoders": encoders}
+    r = ffmpeg_resolve(force_refresh=True)
+    encoders = r["encoders"] if r["valid"] else _detect_encoders()
+    return {
+        "gpus": gpus,
+        "nvidia": nvidia,
+        "encoders": encoders,
+        "ffmpeg": {
+            "path": r.get("ffmpeg"),
+            "version": r.get("version", ""),
+            "source": r.get("source", "missing"),
+            "valid": r.get("valid", False),
+            "filters": r.get("filters", []),
+        },
+    }
 
 
 @router.get("/settings")
@@ -622,14 +640,16 @@ def _run_job(job: dict):
             chunk_file = os.path.join(chunks_dir, f"chunk_{ci:04d}.mp4")
             f.write(f"file '{chunk_file}'\n")
 
+    from ffmpeg_resolver import get_ffmpeg
+    ffmpeg_exe = get_ffmpeg()
+
     video_only = os.path.join(cache_dir, "video_only.mp4")
     concat_cmd = [
-        "ffmpeg", "-y", "-f", "concat", "-safe", "0",
+        ffmpeg_exe, "-y", "-f", "concat", "-safe", "0",
         "-i", concat_list, "-c", "copy", video_only,
     ]
     r = subprocess.run(
         concat_cmd, capture_output=True, text=True,
-        **({"shell": True} if sys.platform == "win32" else {})
     )
     if r.returncode != 0:
         job["status"] = "failed"
@@ -653,7 +673,7 @@ def _run_job(job: dict):
     os.makedirs(os.path.dirname(output), exist_ok=True)
 
     mux_cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_exe, "-y",
         "-i", video_only,
         "-i", audio_src,
         "-c:v", "copy", "-c:a", "aac", "-b:a", "192k",

@@ -504,6 +504,8 @@ def render_fast(
         on_progress("encoding", 20, 0)
 
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
+    from ffmpeg_resolver import get_ffmpeg
+    ffmpeg_exe = get_ffmpeg()
     encoder_args = _select_encoder(settings)
 
     # Escape ASS path for FFmpeg filter.
@@ -516,7 +518,7 @@ def render_fast(
     progress_pipe = os.path.join(cache_path, "progress.txt")
 
     cmd = [
-        "ffmpeg", "-y",
+        ffmpeg_exe, "-y",
         "-loop", "1", "-framerate", str(fps), "-i", base_frame_path,
         "-i", audio_path,
         "-vf", f"ass={ass_escaped},format=yuv420p",
