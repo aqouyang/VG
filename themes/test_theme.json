@@ -1,0 +1,60 @@
+{
+  "name": "test_theme",
+  "label": "Test Theme",
+  "config": {
+    "cover": {
+      "position": "center",
+      "offsetX": 0,
+      "offsetY": -100,
+      "widthPercent": 30,
+      "borderRadius": 20,
+      "shadowIntensity": 0.5
+    },
+    "lyrics": {
+      "position": "center",
+      "offsetX": 0,
+      "offsetY": 100,
+      "widthPercent": 50,
+      "verticalAlign": "center",
+      "textAlign": "center",
+      "fontFamily": "Georgia, serif",
+      "activeFontSize": 30,
+      "inactiveFontSize": 22,
+      "lineSpacing": 50,
+      "activeColor": "#ffffff",
+      "activeWeight": 600,
+      "inactiveOpacity": 0.3,
+      "futureOpacity": 0.4,
+      "scrollSpeed": 0.35,
+      "visibleLines": 4
+    },
+    "title": {
+      "fontFamily": "Georgia, serif",
+      "fontSize": 24,
+      "fontWeight": 600,
+      "color": "#ffffff",
+      "opacity": 0.9,
+      "position": "bottom-center",
+      "offsetX": 0,
+      "offsetY": -50
+    },
+    "artist": {
+      "fontFamily": "Georgia, serif",
+      "fontSize": 16,
+      "fontWeight": 400,
+      "color": "rgba(255,255,255,0.5)",
+      "opacity": 1,
+      "offsetY": 6
+    },
+    "background": {
+      "type": "solid",
+      "blurAmount": 80,
+      "brightness": 0.18,
+      "overlayOpacity": 0,
+      "solidColor": "#111111",
+      "gradientFrom": "#1a1a2e",
+      "gradientTo": "#0a0a0f",
+      "gradientAngle": 135
+    }
+  }
+}

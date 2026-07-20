@@ -1,0 +1,66 @@
+{
+  "name": "sample_demo",
+  "title": "Sample Demo",
+  "artist": "Test Artist",
+  "audio_file": "song.wav",
+  "lyrics_file": "lyrics.txt",
+  "lrc_file": "lyrics.lrc",
+  "cover_file": "cover.png",
+  "duration": 10.0,
+  "visual_config": {
+    "cover": {
+      "position": "left",
+      "offsetX": 0,
+      "offsetY": -40,
+      "widthPercent": 22,
+      "borderRadius": 16,
+      "shadowIntensity": 0.6
+    },
+    "lyrics": {
+      "position": "right",
+      "offsetX": 0,
+      "offsetY": -40,
+      "widthPercent": 36,
+      "verticalAlign": "center",
+      "textAlign": "left",
+      "fontFamily": "Inter, sans-serif",
+      "activeFontSize": 32,
+      "inactiveFontSize": 24,
+      "lineSpacing": 56,
+      "activeColor": "#ffffff",
+      "activeWeight": 600,
+      "inactiveOpacity": 0.25,
+      "futureOpacity": 0.4,
+      "scrollSpeed": 0.35,
+      "visibleLines": 5
+    },
+    "title": {
+      "fontFamily": "Inter, sans-serif",
+      "fontSize": 28,
+      "fontWeight": 600,
+      "color": "#ffffff",
+      "opacity": 1,
+      "position": "below-cover",
+      "offsetX": 0,
+      "offsetY": 32
+    },
+    "artist": {
+      "fontFamily": "Inter, sans-serif",
+      "fontSize": 18,
+      "fontWeight": 400,
+      "color": "rgba(255,255,255,0.45)",
+      "opacity": 1,
+      "offsetY": 6
+    },
+    "background": {
+      "type": "blurred-cover",
+      "blurAmount": 80,
+      "brightness": 0.18,
+      "overlayOpacity": 0.35,
+      "solidColor": "#0a0a0f",
+      "gradientFrom": "#1a1a2e",
+      "gradientTo": "#0a0a0f",
+      "gradientAngle": 135
+    }
+  }
+}

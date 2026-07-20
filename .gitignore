@@ -1,0 +1,11 @@
+node_modules/
+dist/
+__pycache__/
+*.pyc
+.env
+exports/*.mp4
+frontend/render-props.json
+frontend/public/projects/
+projects/*/audio/
+projects/*/assets/waveform.json
+*.egg-info/
