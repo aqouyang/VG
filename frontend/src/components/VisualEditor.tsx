@@ -286,7 +286,7 @@ export default function VisualEditor({ config, onChange }: Props) {
           <Row label="Aspect">
             <div style={{ display: "flex", gap: T.xs, flex: 1 }}>
               {ASPECT_PRESETS.map(p => (
-                <button key={p.l} onClick={() => { setVideo("width", p.w); setVideo("height", p.h); }}
+                <button key={p.l} onClick={() => onChange({ ...config, video: { ...video, width: p.w, height: p.h } })}
                   style={{
                     flex: 1, padding: "3px 0", borderRadius: 3, fontSize: 10, cursor: "pointer",
                     background: video.width === p.w && video.height === p.h ? "#6c5ce7" : "#1a1a28",
