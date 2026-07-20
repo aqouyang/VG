@@ -33,6 +33,11 @@ export default function ProjectEditor() {
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const isSeeking = useRef(false);
   const wasPlaying = useRef(false);
+  // Store lines in a ref so audio listener doesn't need to re-subscribe
+  const linesRef = useRef(lines);
+  linesRef.current = lines;
+  // Track the last known good time to prevent resets to 0
+  const lastTimeRef = useRef(0);
 
   const toast = useCallback((msg: string, type: Toast["type"] = "info") => {
     const id = ++_tid;
@@ -40,9 +45,11 @@ export default function ProjectEditor() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
   }, []);
 
-  // ─── Load ────────────────────────────────────────────────────────
+  // ─── Load project ────────────────────────────────────────────────
   const load = useCallback(async () => {
     if (!name) return;
+    // Save current playback position before reload
+    const savedTime = audioRef.current?.currentTime ?? lastTimeRef.current;
     try {
       const p = await api.getProject(name);
       setProject(p);
@@ -61,26 +68,47 @@ export default function ProjectEditor() {
         } catch {}
       }
     } catch (e: any) { toast("Load failed: " + e.message, "err"); }
+    // Restore playback position after project reload
+    if (audioRef.current && savedTime > 0) {
+      audioRef.current.currentTime = savedTime;
+      setTime(savedTime);
+    }
   }, [name, toast]);
 
   useEffect(() => { load(); }, [load]);
 
-  // ─── Audio events ────────────────────────────────────────────────
+  // ─── Audio events (subscribe ONCE, use refs for changing data) ───
   useEffect(() => {
     const audio = audioRef.current;
     if (!audio) return;
+
     const onTime = () => {
+      // CRITICAL: skip when user is dragging the slider
       if (isSeeking.current) return;
-      setTime(audio.currentTime);
+
+      const t = audio.currentTime;
+
+      // CRITICAL: prevent resets to 0 caused by audio element
+      // re-initialization or brief loading states.
+      // Only allow time=0 if we were already near 0.
+      if (t === 0 && lastTimeRef.current > 0.5) return;
+
+      lastTimeRef.current = t;
+      setTime(t);
+
+      // Find active line using ref (no dependency on lines state)
+      const ll = linesRef.current;
       let a = -1;
-      for (let i = lines.length - 1; i >= 0; i--) {
-        if (lines[i].time >= 0 && audio.currentTime >= lines[i].time) { a = i; break; }
+      for (let i = ll.length - 1; i >= 0; i--) {
+        if (ll[i].time >= 0 && t >= ll[i].time) { a = i; break; }
       }
       setActiveLine(a);
     };
+
     const onEnd = () => setPlaying(false);
     const onPlay = () => setPlaying(true);
     const onPause = () => setPlaying(false);
+
     audio.addEventListener("timeupdate", onTime);
     audio.addEventListener("ended", onEnd);
     audio.addEventListener("play", onPlay);
@@ -91,9 +119,27 @@ export default function ProjectEditor() {
       audio.removeEventListener("play", onPlay);
       audio.removeEventListener("pause", onPause);
     };
-  }, [lines]);
+  // Empty deps: subscribe once. Uses refs for changing data.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  // ─── Playback speed sync ─────────────────────────────────────────
+  // Re-attach listeners when audio element changes (new src)
+  const [audioReady, setAudioReady] = useState(0);
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    const onCanPlay = () => {
+      // Restore time after audio src change
+      if (lastTimeRef.current > 0) {
+        audio.currentTime = lastTimeRef.current;
+      }
+      setAudioReady(r => r + 1);
+    };
+    audio.addEventListener("canplay", onCanPlay);
+    return () => audio.removeEventListener("canplay", onCanPlay);
+  }, [project?.audio_file]);
+
+  // ─── Playback speed ──────────────────────────────────────────────
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed;
   }, [speed]);
@@ -104,26 +150,20 @@ export default function ProjectEditor() {
       const t = (e.target as HTMLElement)?.tagName;
       if (t === "INPUT" || t === "TEXTAREA") return;
       if (tab !== "editor") return;
-
       if (e.code === "Space") { e.preventDefault(); togglePlay(); }
       else if (e.code === "Enter") { e.preventDefault(); stamp(); }
       else if (e.code === "ArrowDown") { e.preventDefault(); setFocus(f => Math.min(f + 1, lines.length - 1)); }
       else if (e.code === "ArrowUp") { e.preventDefault(); setFocus(f => Math.max(f - 1, 0)); }
-      // Skip 2s backward/forward
       else if (e.code === "ArrowLeft") { e.preventDefault(); skip(-2); }
       else if (e.code === "ArrowRight") { e.preventDefault(); skip(2); }
-      // Nudge timestamp ±0.1s
       else if (e.code === "BracketLeft") { e.preventDefault(); nudge(focus, -0.1); }
       else if (e.code === "BracketRight") { e.preventDefault(); nudge(focus, 0.1); }
-      // Undo
       else if (e.code === "KeyZ" && (e.ctrlKey || e.metaKey) && !e.shiftKey) { e.preventDefault(); undo(); }
-      // Tab = jump to next untimed
       else if (e.code === "Tab") {
         e.preventDefault();
         const next = lines.findIndex((l, i) => i > focus && l.time < 0);
         if (next >= 0) setFocus(next);
       }
-      // Clear timestamp
       else if (e.code === "Backspace" && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         pushUndo();
@@ -144,35 +184,55 @@ export default function ProjectEditor() {
 
   // ─── Helpers ─────────────────────────────────────────────────────
   const togglePlay = () => {
-    const a = audioRef.current;
-    if (!a) return;
+    const a = audioRef.current; if (!a) return;
     if (a.paused) a.play(); else a.pause();
   };
 
   const seekTo = (t: number) => {
-    const a = audioRef.current;
-    if (!a) return;
+    const a = audioRef.current; if (!a) return;
     a.currentTime = t;
+    lastTimeRef.current = t;
     setTime(t);
   };
 
   const skip = (delta: number) => {
-    const a = audioRef.current;
-    if (!a) return;
+    const a = audioRef.current; if (!a) return;
     const t = Math.max(0, Math.min(a.duration || 0, a.currentTime + delta));
     a.currentTime = t;
+    lastTimeRef.current = t;
     setTime(t);
   };
 
-  const pushUndo = () => {
-    setUndoStack(p => [...p.slice(-19), lines.map(l => ({ ...l }))]);
-  };
+  // ─── SLIDER SEEKING ──────────────────────────────────────────────
+  const onSliderDown = useCallback(() => {
+    isSeeking.current = true;
+    const a = audioRef.current;
+    wasPlaying.current = a ? !a.paused : false;
+    if (a && !a.paused) a.pause();
+  }, []);
+
+  const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    lastTimeRef.current = v;
+    setTime(v);
+    if (audioRef.current) audioRef.current.currentTime = v;
+  }, []);
+
+  const onSliderUp = useCallback(() => {
+    // Delay clearing isSeeking so timeupdate can't sneak in
+    setTimeout(() => {
+      isSeeking.current = false;
+      if (wasPlaying.current && audioRef.current) audioRef.current.play();
+    }, 80);
+  }, []);
+
+  // ─── Stamp / Undo / Nudge ────────────────────────────────────────
+  const pushUndo = () => setUndoStack(p => [...p.slice(-19), lines.map(l => ({ ...l }))]);
 
   const undo = () => {
     setUndoStack(p => {
       if (!p.length) return p;
-      const prev = p[p.length - 1];
-      setLines(prev);
+      setLines(p[p.length - 1]);
       toast("Undo", "info");
       return p.slice(0, -1);
     });
@@ -190,8 +250,8 @@ export default function ProjectEditor() {
   const nudge = (i: number, delta: number) => {
     if (i < 0 || i >= lines.length || lines[i].time < 0) return;
     pushUndo();
-    const newTime = Math.max(0, parseFloat((lines[i].time + delta).toFixed(2)));
-    setLines(p => { const u = [...p]; u[i] = { ...u[i], time: newTime }; return u; });
+    const t = Math.max(0, parseFloat((lines[i].time + delta).toFixed(2)));
+    setLines(p => { const u = [...p]; u[i] = { ...u[i], time: t }; return u; });
   };
 
   const shiftRange = (from: number, to: number, delta: number) => {
@@ -203,29 +263,8 @@ export default function ProjectEditor() {
       }
       return u;
     });
-    toast(`Shifted lines ${from + 1}-${to + 1} by ${delta > 0 ? "+" : ""}${delta.toFixed(1)}s`, "ok");
+    toast(`Shifted by ${delta > 0 ? "+" : ""}${delta.toFixed(1)}s`, "ok");
   };
-
-  // Slider seeking
-  const onSliderDown = useCallback(() => {
-    isSeeking.current = true;
-    const a = audioRef.current;
-    wasPlaying.current = a ? !a.paused : false;
-    if (a && !a.paused) a.pause();
-  }, []);
-
-  const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = parseFloat(e.target.value);
-    setTime(v);
-    if (audioRef.current) audioRef.current.currentTime = v;
-  }, []);
-
-  const onSliderUp = useCallback(() => {
-    setTimeout(() => {
-      isSeeking.current = false;
-      if (wasPlaying.current && audioRef.current) audioRef.current.play();
-    }, 50);
-  }, []);
 
   // Config
   const onCfgChange = (c: VisualConfig) => {
@@ -263,7 +302,6 @@ export default function ProjectEditor() {
     if (!c.trim()) { toast("No timestamps set", "err"); return; }
     try {
       await api.saveLrc(name, c);
-      await load();
       toast("Saved", "ok");
     } catch (e: any) { toast(e.message, "err"); }
   };
@@ -284,7 +322,7 @@ export default function ProjectEditor() {
     toast("Saved. Run: python render.py " + name, "ok");
   };
 
-  // ─── Derived ─────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────
   if (!project) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0a0a0f", color: "#555" }}>
       Loading...
@@ -296,13 +334,11 @@ export default function ProjectEditor() {
   const stamped = lines.filter(l => l.time >= 0).length;
   const stampedLines = lines.filter(l => l.time >= 0);
 
-  // Compute line duration for display
   const lineDuration = (i: number): string => {
     if (lines[i].time < 0) return "";
     const next = lines.slice(i + 1).find(l => l.time >= 0);
     if (!next) return "";
-    const d = next.time - lines[i].time;
-    return d.toFixed(1) + "s";
+    return (next.time - lines[i].time).toFixed(1) + "s";
   };
 
   return (
@@ -368,61 +404,49 @@ export default function ProjectEditor() {
             <BtnGhost onClick={saveLrc}>Save Project</BtnGhost>
           </Section>
 
-          {/* Editor options */}
+          {/* Editor controls */}
           {tab === "editor" && (
             <div style={{ borderTop: "1px solid #1a1a28", paddingTop: 12, marginTop: 4 }}>
-              {/* Auto-advance toggle */}
               <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: "#888", cursor: "pointer", marginBottom: 10 }}>
-                <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)}
-                  style={{ accentColor: "#6c5ce7" }} />
+                <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} style={{ accentColor: "#6c5ce7" }} />
                 Auto-advance after stamp
               </label>
 
-              {/* Playback speed */}
               <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>Speed</div>
               <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
                 {[0.5, 0.75, 1, 1.25, 1.5].map(s => (
                   <button key={s} onClick={() => setSpeed(s)} style={{
                     flex: 1, padding: "4px 0", borderRadius: 4, border: "none",
-                    background: speed === s ? "#6c5ce7" : "#1a1a28",
-                    color: speed === s ? "#fff" : "#666",
+                    background: speed === s ? "#6c5ce7" : "#1a1a28", color: speed === s ? "#fff" : "#666",
                     fontSize: 11, cursor: "pointer",
-                  }}>
-                    {s}x
-                  </button>
+                  }}>{s}x</button>
                 ))}
               </div>
 
-              {/* Batch shift */}
               {stamped > 0 && (
                 <>
-                  <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>
-                    Shift All Timestamps
-                  </div>
+                  <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>Shift All</div>
                   <div style={{ display: "flex", gap: 4, marginBottom: 12 }}>
                     {[-1, -0.5, -0.1, 0.1, 0.5, 1].map(d => (
                       <button key={d} onClick={() => shiftRange(0, lines.length - 1, d)} style={{
                         flex: 1, padding: "4px 0", borderRadius: 4, border: "1px solid #2a2a3a",
                         background: "transparent", color: "#888", fontSize: 10, cursor: "pointer",
-                      }}>
-                        {d > 0 ? "+" : ""}{d}
-                      </button>
+                      }}>{d > 0 ? "+" : ""}{d}</button>
                     ))}
                   </div>
                 </>
               )}
 
-              {/* Shortcuts */}
               <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontWeight: 600 }}>Shortcuts</div>
               <div style={{ fontSize: 11, color: "#444", lineHeight: 1.7 }}>
-                <Shortcut k="Space" d="Play / Pause" />
-                <Shortcut k="Enter" d="Stamp line" />
-                <Shortcut k="&#8593; &#8595;" d="Navigate lines" />
-                <Shortcut k="&#8592; &#8594;" d="Skip 2s" />
-                <Shortcut k="[ ]" d="Nudge &#177;0.1s" />
-                <Shortcut k="Tab" d="Next untimed" />
-                <Shortcut k="Ctrl+Z" d="Undo" />
-                <Shortcut k="Ctrl+&#9003;" d="Clear time" />
+                <SK k="Space" d="Play / Pause" />
+                <SK k="Enter" d="Stamp line" />
+                <SK k="&#8593; &#8595;" d="Navigate" />
+                <SK k="&#8592; &#8594;" d="Skip 2s" />
+                <SK k="[ ]" d="Nudge &#177;0.1s" />
+                <SK k="Tab" d="Next untimed" />
+                <SK k="Ctrl+Z" d="Undo" />
+                <SK k="Ctrl+&#9003;" d="Clear" />
               </div>
             </div>
           )}
@@ -436,7 +460,7 @@ export default function ProjectEditor() {
           </div>
 
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            {/* Editor tab */}
+            {/* Editor */}
             <div style={{ position: "absolute", inset: 0, display: tab === "editor" ? "flex" : "none", flexDirection: "column" }}>
               <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: "10px 16px" }}>
                 {lines.length === 0 ? (
@@ -465,71 +489,30 @@ export default function ProjectEditor() {
                         borderRadius: 6, marginBottom: 1, cursor: "pointer",
                         background: focused ? "rgba(108,92,231,0.12)" : active ? "rgba(108,92,231,0.06)" : "transparent",
                         borderLeft: focused ? "3px solid #6c5ce7" : "3px solid transparent",
-                        transition: "background 0.1s",
                       }}
                     >
-                      {/* Timestamp */}
-                      <input
-                        style={{
-                          width: 72, background: "#0c0c16",
-                          border: `1px solid ${has ? "#253025" : "#252525"}`,
-                          borderRadius: 4, color: has ? "#6fcf70" : "#444",
-                          padding: "3px 4px", fontSize: 11, fontFamily: "monospace",
-                          textAlign: "center", outline: "none",
-                        }}
-                        value={formatTime(line.time)}
-                        onChange={e => handleTimeEdit(i, e.target.value)}
-                        onClick={e => e.stopPropagation()}
-                      />
-
-                      {/* Duration badge */}
-                      <span style={{
-                        width: 36, fontSize: 9, color: "#3a3a4a", textAlign: "center",
-                        margin: "0 2px", flexShrink: 0, fontFamily: "monospace",
-                      }}>
-                        {dur}
-                      </span>
-
-                      {/* Line number */}
-                      <span style={{ width: 22, fontSize: 10, color: "#2a2a3a", textAlign: "right", marginRight: 8, flexShrink: 0 }}>
-                        {i + 1}
-                      </span>
-
-                      {/* Text */}
-                      <span style={{
-                        flex: 1, fontSize: focused ? 14 : 13,
-                        color: focused ? "#eee" : active ? "#ccc" : "#777",
-                        fontWeight: focused ? 600 : 400,
-                      }}>
-                        {line.text}
-                      </span>
-
-                      {/* Nudge buttons */}
+                      <input style={{
+                        width: 72, background: "#0c0c16", border: `1px solid ${has ? "#253025" : "#252525"}`,
+                        borderRadius: 4, color: has ? "#6fcf70" : "#444", padding: "3px 4px",
+                        fontSize: 11, fontFamily: "monospace", textAlign: "center", outline: "none",
+                      }} value={formatTime(line.time)} onChange={e => handleTimeEdit(i, e.target.value)} onClick={e => e.stopPropagation()} />
+                      <span style={{ width: 36, fontSize: 9, color: "#3a3a4a", textAlign: "center", margin: "0 2px", flexShrink: 0, fontFamily: "monospace" }}>{dur}</span>
+                      <span style={{ width: 22, fontSize: 10, color: "#2a2a3a", textAlign: "right", marginRight: 8, flexShrink: 0 }}>{i + 1}</span>
+                      <span style={{ flex: 1, fontSize: focused ? 14 : 13, color: focused ? "#eee" : active ? "#ccc" : "#777", fontWeight: focused ? 600 : 400 }}>{line.text}</span>
                       {focused && has && (
                         <div style={{ display: "flex", gap: 2, marginRight: 6 }}>
-                          <button onClick={e => { e.stopPropagation(); nudge(i, -0.1); }}
-                            style={{ background: "#1a1a28", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>
-                            -
-                          </button>
-                          <button onClick={e => { e.stopPropagation(); nudge(i, 0.1); }}
-                            style={{ background: "#1a1a28", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>
-                            +
-                          </button>
+                          <button onClick={e => { e.stopPropagation(); nudge(i, -0.1); }} style={{ background: "#1a1a28", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>-</button>
+                          <button onClick={e => { e.stopPropagation(); nudge(i, 0.1); }} style={{ background: "#1a1a28", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>+</button>
                         </div>
                       )}
-
-                      {/* Status dot */}
-                      <span style={{
-                        width: 7, height: 7, borderRadius: "50%", flexShrink: 0,
-                        background: has ? "#4caf50" : "#2a2a2a",
-                      }} />
+                      <span style={{ width: 7, height: 7, borderRadius: "50%", flexShrink: 0, background: has ? "#4caf50" : "#2a2a2a" }} />
                     </div>
                   );
                 })}
               </div>
             </div>
 
-            {/* Preview tab */}
+            {/* Preview */}
             <div style={{ position: "absolute", inset: 0, display: tab === "preview" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#060609" }}>
               {stampedLines.length > 0 ? (
                 <LyricVideoPreview project={project} lrcLines={stampedLines} currentTime={time} coverUrl={coverUrl} visualConfig={cfg} />
@@ -546,22 +529,15 @@ export default function ProjectEditor() {
               <button onClick={togglePlay} style={{
                 width: 34, height: 34, borderRadius: "50%", border: "none",
                 background: "#6c5ce7", color: "#fff", cursor: "pointer",
-                display: "flex", alignItems: "center", justifyContent: "center",
-                fontSize: 14, flexShrink: 0,
-              }}>
-                {playing ? "\u275A\u275A" : "\u25B6"}
-              </button>
+                display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
+              }}>{playing ? "\u275A\u275A" : "\u25B6"}</button>
               <span style={{ fontFamily: "monospace", fontSize: 12, color: "#888", minWidth: 72 }}>{formatTime(time)}</span>
               <input type="range" min={0} max={project.duration || 100} step={0.01} value={time}
                 onChange={onSliderChange} onMouseDown={onSliderDown} onMouseUp={onSliderUp}
                 onTouchStart={onSliderDown} onTouchEnd={onSliderUp}
-                style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }}
-              />
+                style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }} />
               <span style={{ fontFamily: "monospace", fontSize: 12, color: "#555", minWidth: 72 }}>{formatTime(project.duration || 0)}</span>
-              {/* Speed indicator */}
-              {speed !== 1 && (
-                <span style={{ fontSize: 11, color: "#6c5ce7", fontWeight: 600, minWidth: 30 }}>{speed}x</span>
-              )}
+              {speed !== 1 && <span style={{ fontSize: 11, color: "#6c5ce7", fontWeight: 600, minWidth: 30 }}>{speed}x</span>}
             </div>
           )}
         </div>
@@ -586,9 +562,7 @@ export default function ProjectEditor() {
             color: t.type === "ok" ? "#7ecf7e" : t.type === "err" ? "#cf7e7e" : "#9e9eff",
             border: `1px solid ${t.type === "ok" ? "#2a4a2a" : t.type === "err" ? "#4a2a2a" : "#2a2a4a"}`,
             maxWidth: 320,
-          }}>
-            {t.msg}
-          </div>
+          }}>{t.msg}</div>
         ))}
       </div>
 
@@ -604,45 +578,19 @@ export default function ProjectEditor() {
 // ─── Small components ────────────────────────────────────────────────
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8, fontWeight: 600 }}>{title}</div>
-      {children}
-    </div>
-  );
+  return <div style={{ marginBottom: 18 }}><div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 8, fontWeight: 600 }}>{title}</div>{children}</div>;
 }
 
 function UploadBox({ label, accept, onFile, small }: { label: string; accept: string; onFile: (f: File) => void; small?: boolean }) {
-  return (
-    <label style={{
-      display: "block", background: "#0c0c16", border: "1px dashed #2a2a3a",
-      borderRadius: 8, padding: small ? "8px" : "14px",
-      textAlign: "center", cursor: "pointer", color: "#555", fontSize: 12, marginBottom: 8,
-    }}>
-      {label}
-      <input type="file" accept={accept} hidden onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
-    </label>
-  );
+  return <label style={{ display: "block", background: "#0c0c16", border: "1px dashed #2a2a3a", borderRadius: 8, padding: small ? "8px" : "14px", textAlign: "center", cursor: "pointer", color: "#555", fontSize: 12, marginBottom: 8 }}>{label}<input type="file" accept={accept} hidden onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} /></label>;
 }
 
 function Btn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} style={{
-      width: "100%", padding: "8px 14px", borderRadius: 6, border: "none",
-      background: "#6c5ce7", color: "#fff", fontSize: 12, fontWeight: 500,
-      cursor: "pointer", marginBottom: 6,
-    }}>{children}</button>
-  );
+  return <button onClick={onClick} style={{ width: "100%", padding: "8px 14px", borderRadius: 6, border: "none", background: "#6c5ce7", color: "#fff", fontSize: 12, fontWeight: 500, cursor: "pointer", marginBottom: 6 }}>{children}</button>;
 }
 
 function BtnGhost({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} style={{
-      width: "100%", padding: "7px 14px", borderRadius: 6,
-      border: "1px solid #2a2a3a", background: "transparent",
-      color: "#888", fontSize: 12, cursor: "pointer", marginBottom: 6,
-    }}>{children}</button>
-  );
+  return <button onClick={onClick} style={{ width: "100%", padding: "7px 14px", borderRadius: 6, border: "1px solid #2a2a3a", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", marginBottom: 6 }}>{children}</button>;
 }
 
 function Info({ icon, text, color }: { icon: string; text: string; color: string }) {
@@ -650,24 +598,13 @@ function Info({ icon, text, color }: { icon: string; text: string; color: string
 }
 
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button onClick={onClick} style={{
-      padding: "10px 20px", border: "none", background: "none",
-      color: active ? "#fff" : "#666", fontSize: 13, fontWeight: 500,
-      cursor: "pointer", borderBottom: active ? "2px solid #6c5ce7" : "2px solid transparent",
-    }}>{children}</button>
-  );
+  return <button onClick={onClick} style={{ padding: "10px 20px", border: "none", background: "none", color: active ? "#fff" : "#666", fontSize: 13, fontWeight: 500, cursor: "pointer", borderBottom: active ? "2px solid #6c5ce7" : "2px solid transparent" }}>{children}</button>;
 }
 
 function Empty({ icon, text }: { icon: string; text: string }) {
-  return (
-    <div style={{ textAlign: "center", padding: 40, color: "#444" }}>
-      <div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>{icon}</div>
-      <div style={{ fontSize: 13 }}>{text}</div>
-    </div>
-  );
+  return <div style={{ textAlign: "center", padding: 40, color: "#444" }}><div style={{ fontSize: 32, marginBottom: 12, opacity: 0.3 }}>{icon}</div><div style={{ fontSize: 13 }}>{text}</div></div>;
 }
 
-function Shortcut({ k, d }: { k: string; d: string }) {
+function SK({ k, d }: { k: string; d: string }) {
   return <div><span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>{k}</span> {d}</div>;
 }
