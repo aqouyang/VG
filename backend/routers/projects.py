@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import shutil
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException
@@ -38,6 +39,33 @@ def save_project_json(name: str, data: dict):
     path = os.path.join(get_project_path(name), "project.json")
     with open(path, "w") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+LRC_LINE_RE = re.compile(r"^\[(\d{1,2}):(\d{2}(?:\.\d+)?)\](.+)$")
+
+
+def detect_lrc_format(text: str) -> bool:
+    """Return True if the text looks like LRC (has timestamp markers)."""
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if line and LRC_LINE_RE.match(line):
+            return True
+    return False
+
+
+def lrc_to_plain(text: str) -> str:
+    """Strip timestamps from LRC text, return plain lyrics."""
+    lines = []
+    for line in text.strip().split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        m = LRC_LINE_RE.match(line)
+        if m:
+            lines.append(m.group(3))
+        else:
+            lines.append(line)
+    return "\n".join(lines)
 
 
 @router.get("")
@@ -134,6 +162,7 @@ async def upload_audio(name: str, file: UploadFile = File(...)):
 
 @router.post("/{name}/lyrics")
 async def upload_lyrics(name: str, file: UploadFile = File(...)):
+    """Upload lyrics file. Auto-detects LRC vs plain text format."""
     project_path = get_project_path(name)
     if not os.path.exists(project_path):
         raise HTTPException(404, "Project not found")
@@ -141,15 +170,32 @@ async def upload_lyrics(name: str, file: UploadFile = File(...)):
     content = await file.read()
     text = content.decode("utf-8")
 
-    lyrics_path = os.path.join(project_path, "lyrics", "lyrics.txt")
-    with open(lyrics_path, "w", encoding="utf-8") as f:
-        f.write(text)
+    is_lrc = detect_lrc_format(text)
 
     data = load_project_json(name)
-    data["lyrics_file"] = "lyrics.txt"
-    save_project_json(name, data)
 
-    return {"lyrics_file": "lyrics.txt", "content": text}
+    if is_lrc:
+        # Save original as LRC
+        lrc_path = os.path.join(project_path, "lyrics", "lyrics.lrc")
+        with open(lrc_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        # Also save plain text version
+        plain = lrc_to_plain(text)
+        txt_path = os.path.join(project_path, "lyrics", "lyrics.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(plain)
+        data["lyrics_file"] = "lyrics.txt"
+        data["lrc_file"] = "lyrics.lrc"
+        save_project_json(name, data)
+        return {"lyrics_file": "lyrics.txt", "lrc_file": "lyrics.lrc", "format": "lrc", "content": text}
+    else:
+        # Plain text lyrics
+        txt_path = os.path.join(project_path, "lyrics", "lyrics.txt")
+        with open(txt_path, "w", encoding="utf-8") as f:
+            f.write(text)
+        data["lyrics_file"] = "lyrics.txt"
+        save_project_json(name, data)
+        return {"lyrics_file": "lyrics.txt", "format": "txt", "content": text}
 
 
 @router.post("/{name}/lyrics/text")
