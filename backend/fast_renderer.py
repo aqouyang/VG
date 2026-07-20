@@ -139,22 +139,75 @@ def _round_corners(img: Image.Image, radius: int) -> Image.Image:
     return result
 
 
-def _get_font(family: str, size: int, bold: bool = False) -> ImageFont.FreeTypeFont:
-    """Try to load a font. Fall back to default."""
-    names = [n.strip() for n in family.split(",")]
-    for name in names:
+# CJK fallback font chain for Chinese/Japanese/Korean text
+_CJK_FONTS_WIN = [
+    "msyh.ttc", "msyhbd.ttc",  # Microsoft YaHei
+    "simhei.ttf",              # SimHei
+    "simsun.ttc",              # SimSun
+    "Deng.ttf", "Dengb.ttf",   # DengXian
+    "msjh.ttc",                # Microsoft JhengHei
+    "mingliu.ttc",             # MingLiU
+]
+_CJK_FONTS_LINUX = [
+    "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+    "/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc",
+    "/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf",
+]
+
+
+def _has_cjk(text: str) -> bool:
+    """Check if text contains CJK characters."""
+    for ch in text:
+        cp = ord(ch)
+        if (0x4E00 <= cp <= 0x9FFF or 0x3400 <= cp <= 0x4DBF or
+            0x2E80 <= cp <= 0x2EFF or 0x3000 <= cp <= 0x303F or
+            0xFF00 <= cp <= 0xFFEF or 0xF900 <= cp <= 0xFAFF):
+            return True
+    return False
+
+
+def _get_font(family: str, size: int, bold: bool = False, text: str = "") -> ImageFont.FreeTypeFont:
+    """Load a font with CJK fallback. Checks glyph coverage for the given text."""
+    candidates = []
+
+    # User-requested fonts
+    for name in family.split(","):
         name_clean = name.strip("'\" ")
-        for path in [
-            f"/usr/share/fonts/truetype/{name_clean.lower()}/{name_clean}.ttf",
-            f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
-            f"C:/Windows/Fonts/{name_clean}.ttf",
-            f"C:/Windows/Fonts/arial{'bd' if bold else ''}.ttf",
-        ]:
-            if os.path.exists(path):
-                try:
-                    return ImageFont.truetype(path, size)
-                except Exception:
-                    pass
+        if not name_clean:
+            continue
+        # Windows
+        for ext in [".ttf", ".ttc", ".otf"]:
+            candidates.append(f"C:/Windows/Fonts/{name_clean}{ext}")
+            candidates.append(f"C:/Windows/Fonts/{name_clean.lower()}{ext}")
+        if bold:
+            candidates.append(f"C:/Windows/Fonts/{name_clean}bd.ttf")
+            candidates.append(f"C:/Windows/Fonts/{name_clean}b.ttf")
+        # Linux
+        candidates.append(f"/usr/share/fonts/truetype/{name_clean.lower()}/{name_clean}.ttf")
+        candidates.append(f"/usr/share/fonts/truetype/{name_clean.lower()}/{name_clean}{'Bold' if bold else ''}.ttf")
+
+    # Standard fallbacks
+    candidates.extend([
+        f"C:/Windows/Fonts/arial{'bd' if bold else ''}.ttf",
+        f"/usr/share/fonts/truetype/dejavu/DejaVuSans{'-Bold' if bold else ''}.ttf",
+    ])
+
+    # CJK fallbacks when text contains Chinese characters
+    if _has_cjk(text):
+        for f in _CJK_FONTS_WIN:
+            candidates.append(f"C:/Windows/Fonts/{f}")
+        candidates.extend(_CJK_FONTS_LINUX)
+
+    for path in candidates:
+        if os.path.exists(path):
+            try:
+                return ImageFont.truetype(path, size)
+            except Exception:
+                pass
+
+    # Last resort
     try:
         return ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", size)
     except Exception:
@@ -219,12 +272,12 @@ def compose_static_frame(project: dict, project_dir: str, cfg: dict, w: int, h: 
     # Title
     title_cfg = cfg.get("title", {})
     title_size = int(title_cfg.get("fontSize", 28) * s)
+    title_text = project.get("title", "")
     title_font = _get_font(title_cfg.get("fontFamily", "Arial"), title_size,
-                           title_cfg.get("fontWeight", 600) >= 600)
+                           title_cfg.get("fontWeight", 600) >= 600, text=title_text)
     title_color = _parse_color(title_cfg.get("color", "#ffffff"))
     tl = layout["title"]
     draw = ImageDraw.Draw(canvas)
-    title_text = project.get("title", "")
     if tl["align"] == "center":
         bbox = draw.textbbox((0, 0), title_text, font=title_font)
         tw = bbox[2] - bbox[0]
@@ -239,9 +292,9 @@ def compose_static_frame(project: dict, project_dir: str, cfg: dict, w: int, h: 
     # Artist
     artist_cfg = cfg.get("artist", {})
     artist_size = int(artist_cfg.get("fontSize", 18) * s)
-    artist_font = _get_font(artist_cfg.get("fontFamily", "Arial"), artist_size)
-    artist_color = _parse_color(artist_cfg.get("color", "rgba(255,255,255,115)"))
     artist_text = project.get("artist", "")
+    artist_font = _get_font(artist_cfg.get("fontFamily", "Arial"), artist_size, text=artist_text)
+    artist_color = _parse_color(artist_cfg.get("color", "rgba(255,255,255,115)"))
     artist_y = tl["y"] + title_size * 1.3 + artist_cfg.get("offsetY", 6) * s
     if tl["align"] == "center":
         bbox = draw.textbbox((0, 0), artist_text, font=artist_font)
@@ -284,7 +337,17 @@ def generate_ass(
     lyrics_cfg = cfg.get("lyrics", {})
     anim_cfg = cfg.get("lyricAnimation", {})
 
-    font_family = lyrics_cfg.get("fontFamily", "Arial").split(",")[0].strip("'\" ")
+    # Use a CJK-capable font for ASS when lyrics contain Chinese characters
+    raw_font = lyrics_cfg.get("fontFamily", "Arial").split(",")[0].strip("'\" ")
+    all_text = " ".join(l.get("text", "") for l in lrc_lines)
+    if _has_cjk(all_text):
+        # Prefer Microsoft YaHei on Windows, Noto Sans CJK on Linux
+        if sys.platform == "win32":
+            font_family = "Microsoft YaHei"
+        else:
+            font_family = "Noto Sans CJK SC"
+    else:
+        font_family = raw_font
     active_size = int(lyrics_cfg.get("activeFontSize", 32) * s)
     inactive_size = int(lyrics_cfg.get("inactiveFontSize", 24) * s)
     line_spacing = int(lyrics_cfg.get("lineSpacing", 56) * s)
@@ -344,6 +407,19 @@ def generate_ass(
     lines_out.append("")
     lines_out.append("[Events]")
     lines_out.append("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text")
+
+    # Pre-roll: show upcoming lyrics before the first timestamp
+    preroll_time = min(3.0, lrc_lines[0]["time"]) if lrc_lines[0]["time"] > 0.5 else 0
+    if preroll_time > 0:
+        preroll_start = max(0, lrc_lines[0]["time"] - preroll_time)
+        for offset in range(min(visible_lines + 1, len(lrc_lines))):
+            line = lrc_lines[offset]
+            y_pos = center_y + offset * line_spacing - inactive_size // 2
+            if y_pos > ly + lh + line_spacing:
+                break
+            text = line["text"].replace("\\", "\\\\").replace("{", "\\{").replace("}", "\\}")
+            entry = f"Dialogue: 0,{_ass_time(preroll_start)},{_ass_time(lrc_lines[0]['time'])},Future,,0,0,0,,{{\\pos({lx},{y_pos})}}{text}"
+            lines_out.append(entry)
 
     for active_idx in range(len(lrc_lines)):
         active = lrc_lines[active_idx]
@@ -546,7 +622,12 @@ def render_fast(
 
     # Use 'ass' filter (no original_size). Fall back to subtitles.
     filter_name = "ass" if has_ass_filter else "subtitles"
-    vf = f"{filter_name}=lyrics.ass,format=yuv420p"
+    # Add fontsdir for libass to find system fonts (especially CJK)
+    if sys.platform == "win32":
+        fonts_dir = "C\\:/Windows/Fonts"
+    else:
+        fonts_dir = "/usr/share/fonts"
+    vf = f"{filter_name}=lyrics.ass:fontsdir={fonts_dir},format=yuv420p"
 
     # Hard assertions: the filter must contain no absolute path components
     for bad in ["original_size", "C:", "D:", "E:", "\\"]:

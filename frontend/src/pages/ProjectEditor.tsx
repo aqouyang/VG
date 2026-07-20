@@ -380,13 +380,14 @@ export default function ProjectEditor() {
   };
 
   // ─── Export ───────────────────────────────────────────────────────
+  const [renderMode, setRenderMode] = useState<"auto" | "fast" | "advanced">("auto");
+
   const doExport = async () => {
     if (!name) return;
-    // Save config and timestamps first
     await api.updateProject(name, { visual_config: cfg });
     if (lines.some(l => l.time >= 0)) await api.saveLrc(name, lrcLinesToString(lines));
     try {
-      await api.createJob(name);
+      await api.createJob(name, undefined, renderMode);
       toast("Export queued. See the export window for progress.", "ok");
     } catch (e: any) { toast("Export failed: " + e.message, "err"); }
   };
@@ -462,6 +463,19 @@ export default function ProjectEditor() {
           </Panel>
 
           <Panel title="Export">
+            <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.sm }}>
+              {([["auto", "Auto"], ["fast", "Fast render"], ["advanced", "Exact preview"]] as const).map(([v, l]) => (
+                <button key={v} onClick={() => setRenderMode(v)} style={{
+                  flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "none", fontSize: 10, cursor: "pointer",
+                  background: renderMode === v ? "#6c5ce7" : "#1a1a28", color: renderMode === v ? "#fff" : "#666",
+                }}>{l}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 10, color: "#555", marginBottom: SP.sm }}>
+              {renderMode === "fast" ? "Fast compositing. Some transitions approximated." :
+               renderMode === "advanced" ? "Frame by frame. Slower but visually exact." :
+               "Auto selects the best mode."}
+            </div>
             <PBtn onClick={doExport}>Export Video</PBtn>
             <PBtnGhost onClick={saveLrc}>Save Project</PBtnGhost>
           </Panel>
