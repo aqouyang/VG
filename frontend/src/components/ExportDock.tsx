@@ -135,7 +135,7 @@ export default function ExportDock() {
                   {job.render_fps > 0 ? ` (${job.render_fps} fps)` : ""}
                   {job.eta > 0 && job.status === "rendering" ? ` ~${fmtTime(job.eta)}` : ""}
                 </div>
-                {job.error && <div style={{ color: "#cf7e7e", fontSize: 10, marginTop: 1 }}>{job.error}</div>}
+                {job.error && <div style={{ color: "#cf7e7e", fontSize: 10, marginTop: 2, whiteSpace: "pre-wrap", wordBreak: "break-word", maxHeight: 60, overflow: "auto", background: "#1a1015", borderRadius: 3, padding: "3px 5px" }}>{job.error}</div>}
               </div>
 
               {/* Progress */}

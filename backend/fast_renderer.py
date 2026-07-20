@@ -506,8 +506,12 @@ def render_fast(
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     encoder_args = _select_encoder(settings)
 
-    # Escape ASS path for FFmpeg filter (backslashes and colons)
-    ass_escaped = ass_path.replace("\\", "/").replace(":", "\\:")
+    # Escape ASS path for FFmpeg filter.
+    # On Windows: convert backslashes to forward slashes, escape colons.
+    # On Linux: escape colons and special chars.
+    ass_escaped = ass_path.replace("\\", "/")
+    if ":" in ass_escaped:
+        ass_escaped = ass_escaped.replace(":", "\\:")
 
     progress_pipe = os.path.join(cache_path, "progress.txt")
 
@@ -515,7 +519,7 @@ def render_fast(
         "ffmpeg", "-y",
         "-loop", "1", "-framerate", str(fps), "-i", base_frame_path,
         "-i", audio_path,
-        "-vf", f"ass='{ass_escaped}',format=yuv420p",
+        "-vf", f"ass={ass_escaped},format=yuv420p",
         "-t", str(duration),
         *encoder_args,
         "-c:a", "aac", "-b:a", settings.get("audioBitrate", "192k"),
@@ -525,21 +529,35 @@ def render_fast(
     ]
 
     t_enc_start = time.time()
+    ffmpeg_output_lines = []
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1,
         **({"shell": True} if sys.platform == "win32" else {})
     )
 
-    # Parse progress from the progress file
+    # Parse progress from the progress file, collect output for error reporting
     last_pct = 20
     while proc.poll() is None:
         time.sleep(0.5)
+        # Read any stdout/stderr
+        if proc.stdout:
+            import select
+            try:
+                while True:
+                    line = proc.stdout.readline()
+                    if not line:
+                        break
+                    ffmpeg_output_lines.append(line.rstrip())
+                    if len(ffmpeg_output_lines) > 100:
+                        ffmpeg_output_lines = ffmpeg_output_lines[-50:]
+            except Exception:
+                pass
+
         if os.path.exists(progress_pipe):
             try:
                 with open(progress_pipe) as pf:
                     content = pf.read()
-                # Parse out_time_ms
                 m = re.findall(r"out_time_ms=(\d+)", content)
                 if m:
                     encoded_us = int(m[-1])
@@ -554,6 +572,11 @@ def render_fast(
             except Exception:
                 pass
 
+    # Collect remaining output
+    if proc.stdout:
+        for line in proc.stdout:
+            ffmpeg_output_lines.append(line.rstrip())
+
     proc.wait()
     t_encode = time.time() - t_enc_start
 
@@ -562,7 +585,14 @@ def render_fast(
         os.remove(progress_pipe)
 
     if proc.returncode != 0:
-        raise RuntimeError(f"FFmpeg failed (exit {proc.returncode})")
+        # Build detailed error message from FFmpeg output
+        error_lines = [l for l in ffmpeg_output_lines if l.strip()]
+        # Find the most relevant error lines
+        relevant = [l for l in error_lines if any(k in l.lower() for k in ["error", "fail", "no such", "invalid", "cannot", "unrecognized"])]
+        if not relevant:
+            relevant = error_lines[-10:] if error_lines else ["No output captured"]
+        detail = "\n".join(relevant[-5:])
+        raise RuntimeError(f"FFmpeg failed (exit {proc.returncode}):\n{detail}")
 
     if on_progress:
         on_progress("finalizing", 98, 0)
