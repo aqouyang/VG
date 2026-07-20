@@ -1,5 +1,5 @@
 import React from "react";
-import type { Project, LrcLine, VisualConfig } from "../types";
+import type { Project, LrcLine, VisualConfig, LyricAnimationConfig } from "../types";
 import { computeLayout } from "../utils/layout";
 import { defaultVisualConfig } from "../utils/visualDefaults";
 
@@ -14,69 +14,107 @@ interface Props {
 const WIDTH = 640;
 const HEIGHT = 360;
 
+// ─── Per-character colored lyric line ────────────────────────────────
+function ColoredLine({
+  text, progress, activeColor, baseColor,
+  fontSize, fontWeight, fontFamily, letterSpacing, opacity, textAlign,
+}: {
+  text: string; progress: number;
+  activeColor: string; baseColor: string;
+  fontSize: number; fontWeight: number; fontFamily: string;
+  letterSpacing: number; opacity: number; textAlign: string;
+}) {
+  if (progress <= 0 || progress >= 1) {
+    // No partial coloring needed
+    return (
+      <div style={{
+        color: progress >= 1 ? activeColor : baseColor,
+        fontSize, fontWeight, fontFamily, letterSpacing,
+        opacity, lineHeight: 1.5, textAlign: textAlign as any,
+        whiteSpace: "pre-wrap",
+      }}>
+        {text}
+      </div>
+    );
+  }
+
+  // Split into characters and color based on progress
+  const chars = [...text]; // handles multi-byte (Chinese, emoji)
+  const coloredCount = Math.floor(progress * chars.length);
+
+  return (
+    <div style={{
+      fontSize, fontWeight, fontFamily, letterSpacing,
+      opacity, lineHeight: 1.5, textAlign: textAlign as any,
+      whiteSpace: "pre-wrap",
+    }}>
+      {chars.map((ch, ci) => (
+        <span key={ci} style={{ color: ci < coloredCount ? activeColor : baseColor }}>
+          {ch}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function LyricVideoPreview({
-  project,
-  lrcLines,
-  currentTime,
-  coverUrl,
-  visualConfig,
+  project, lrcLines, currentTime, coverUrl, visualConfig,
 }: Props) {
   const cfg = visualConfig ?? defaultVisualConfig;
-
-  // Use video config aspect ratio if available
   const videoW = cfg.video?.width ?? 1920;
   const videoH = cfg.video?.height ?? 1080;
   const aspect = videoW / videoH;
   const previewW = aspect >= 1 ? WIDTH : Math.round(HEIGHT * aspect);
   const previewH = aspect >= 1 ? Math.round(WIDTH / aspect) : HEIGHT;
-
   const layout = computeLayout(cfg, previewW, previewH);
   const s = Math.min(previewW / 1920, previewH / 1080);
-  const anim = cfg.lyricAnimation;
+  const anim: LyricAnimationConfig = cfg.lyricAnimation ?? {
+    enabled: false, activeColor: "#6c5ce7", completedColor: "#888",
+    inactiveColor: "#fff", colorMode: "current-line", transitionDuration: 2,
+  };
 
   // Find active line
   let activeLine = -1;
   for (let i = lrcLines.length - 1; i >= 0; i--) {
-    if (currentTime >= lrcLines[i].time) {
-      activeLine = i;
-      break;
+    if (currentTime >= lrcLines[i].time) { activeLine = i; break; }
+  }
+
+  // Compute fill progress for a line
+  function getProgress(i: number): number {
+    if (!anim.enabled || i !== activeLine) return 0;
+    const line = lrcLines[i];
+    const next = lrcLines[i + 1];
+    const dur = next ? next.time - line.time : anim.transitionDuration;
+    const elapsed = currentTime - line.time;
+    return Math.max(0, Math.min(1, elapsed / Math.min(dur, anim.transitionDuration)));
+  }
+
+  // Determine line color
+  function getLineColor(i: number): { color: string; progress: number } {
+    if (!anim.enabled) {
+      const isActive = i === activeLine;
+      return { color: isActive ? cfg.lyrics.activeColor : "#fff", progress: 0 };
     }
+    const isPast = i < activeLine;
+    const isActive = i === activeLine;
+    if (isActive) {
+      return { color: anim.inactiveColor, progress: getProgress(i) };
+    }
+    if (isPast && anim.colorMode === "all-played") {
+      return { color: anim.completedColor, progress: 0 };
+    }
+    if (isPast) {
+      return { color: anim.completedColor, progress: 0 };
+    }
+    return { color: anim.inactiveColor, progress: 0 };
   }
 
   const shadowAlpha = cfg.cover.shadowIntensity;
 
-  function getLineFillProgress(lineIdx: number): number {
-    if (!anim?.enabled) return 0;
-    const line = lrcLines[lineIdx];
-    const nextLine = lrcLines[lineIdx + 1];
-    const lineDuration = nextLine ? nextLine.time - line.time : anim.transitionDuration;
-    const elapsed = currentTime - line.time;
-    return Math.max(0, Math.min(1, elapsed / Math.min(lineDuration, anim.transitionDuration)));
-  }
-
-  function getLineColor(lineIdx: number, isActive: boolean, isPast: boolean): React.CSSProperties {
-    if (!anim?.enabled) {
-      return { color: isActive ? cfg.lyrics.activeColor : "#fff" };
-    }
-    if (isPast) {
-      return { color: anim.completedColor };
-    }
-    if (isActive) {
-      const progress = getLineFillProgress(lineIdx);
-      return {
-        background: `linear-gradient(to right, ${anim.activeColor} ${progress * 100}%, ${cfg.lyrics.activeColor} ${progress * 100}%)`,
-        WebkitBackgroundClip: "text",
-        WebkitTextFillColor: "transparent",
-        backgroundClip: "text",
-      };
-    }
-    return { color: "#fff" };
-  }
-
   return (
     <div style={{
-      width: previewW, height: previewH, position: "relative", overflow: "hidden",
-      borderRadius: 8,
+      width: previewW, height: previewH, position: "relative",
+      overflow: "hidden", borderRadius: 8,
       background: cfg.background.type === "solid" ? cfg.background.solidColor : "#0a0a0f",
     }}>
       {/* Background */}
@@ -94,9 +132,8 @@ export default function LyricVideoPreview({
         <div style={layout.bg.overlayStyle as React.CSSProperties} />
       )}
 
-      {/* Content */}
       <div style={{ position: "relative", width: "100%", height: "100%", zIndex: 1 }}>
-        {/* Album cover */}
+        {/* Cover */}
         {coverUrl && (
           <div style={{
             position: "absolute", left: layout.cover.x, top: layout.cover.y,
@@ -108,7 +145,7 @@ export default function LyricVideoPreview({
           </div>
         )}
 
-        {/* Title & artist */}
+        {/* Title */}
         <div style={{
           position: "absolute",
           left: layout.title.textAlign === "right" ? undefined
@@ -116,29 +153,26 @@ export default function LyricVideoPreview({
           right: layout.title.textAlign === "right" ? previewW - layout.title.x : undefined,
           top: layout.title.y,
           width: layout.title.textAlign === "center" ? previewW : layout.cover.size,
-          textAlign: layout.title.textAlign as React.CSSProperties["textAlign"],
+          textAlign: layout.title.textAlign as any,
           opacity: cfg.title.opacity,
         }}>
           <div style={{
             color: cfg.title.color, fontSize: cfg.title.fontSize * s,
             fontWeight: cfg.title.fontWeight, fontFamily: cfg.title.fontFamily, lineHeight: 1.3,
-          }}>
-            {project.title}
-          </div>
+          }}>{project.title}</div>
           <div style={{
             color: cfg.artist.color, fontSize: cfg.artist.fontSize * s,
             fontWeight: cfg.artist.fontWeight, fontFamily: cfg.artist.fontFamily,
             marginTop: cfg.artist.offsetY * s, opacity: cfg.artist.opacity,
-          }}>
-            {project.artist}
-          </div>
+          }}>{project.artist}</div>
         </div>
 
-        {/* Scrolling lyrics */}
+        {/* Lyrics */}
         <div style={{
           position: "absolute", left: layout.lyrics.x, top: layout.lyrics.y,
           width: layout.lyrics.w, height: layout.lyrics.h,
-          display: "flex", flexDirection: "column", justifyContent: "center", overflow: "hidden",
+          display: "flex", flexDirection: "column", justifyContent: "center",
+          overflow: "hidden",
         }}>
           {lrcLines.map((line, i) => {
             const diff = i - activeLine;
@@ -147,20 +181,40 @@ export default function LyricVideoPreview({
             const isPast = diff < 0;
             const yOffset = diff * cfg.lyrics.lineSpacing * s;
             const fontSize = (isActive ? cfg.lyrics.activeFontSize : cfg.lyrics.inactiveFontSize) * s;
-            const colorStyle = getLineColor(i, isActive, isPast);
+            const baseOpacity = isActive ? 1 : isPast ? cfg.lyrics.inactiveOpacity : cfg.lyrics.futureOpacity;
+            const lineColor = getLineColor(i);
+
             return (
               <div key={i} style={{
                 position: "absolute", top: "50%", left: 0, right: 0,
                 transform: `translateY(${yOffset - fontSize / 2}px)`,
-                fontSize, fontWeight: isActive ? cfg.lyrics.activeWeight : 400,
-                opacity: isActive ? 1 : isPast ? cfg.lyrics.inactiveOpacity : cfg.lyrics.futureOpacity,
-                fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
-                letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
-                textAlign: cfg.lyrics.textAlign as React.CSSProperties["textAlign"],
                 transition: `all ${cfg.lyrics.scrollSpeed}s ease`,
-                ...colorStyle,
               }}>
-                {line.text}
+                {anim.enabled && isActive && lineColor.progress > 0 ? (
+                  <ColoredLine
+                    text={line.text}
+                    progress={lineColor.progress}
+                    activeColor={anim.activeColor}
+                    baseColor={anim.inactiveColor}
+                    fontSize={fontSize}
+                    fontWeight={isActive ? cfg.lyrics.activeWeight : 400}
+                    fontFamily={cfg.lyrics.fontFamily}
+                    letterSpacing={(cfg.lyrics.letterSpacing ?? 0) * s}
+                    opacity={baseOpacity}
+                    textAlign={cfg.lyrics.textAlign}
+                  />
+                ) : (
+                  <div style={{
+                    color: lineColor.color, fontSize,
+                    fontWeight: isActive ? cfg.lyrics.activeWeight : 400,
+                    fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
+                    letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
+                    opacity: baseOpacity,
+                    textAlign: cfg.lyrics.textAlign as any,
+                  }}>
+                    {line.text}
+                  </div>
+                )}
               </div>
             );
           })}

@@ -193,8 +193,10 @@ const DEFAULT_VIDEO: VideoConfig = {
 
 const DEFAULT_LYRIC_ANIMATION: LyricAnimationConfig = {
   enabled: false,
-  activeColor: "#ffcc00",
+  activeColor: "#6c5ce7",
   completedColor: "#888888",
+  inactiveColor: "#ffffff",
+  colorMode: "current-line",
   transitionDuration: 2,
 };
 
@@ -607,17 +609,29 @@ export default function VisualEditor({ config, onChange }: Props) {
               />
             </div>
 
-            {/* Active color */}
-            <ColorRow label="Active Color" value={lyricAnimation.activeColor}
+            {/* Color mode */}
+            <Select label="Mode" value={lyricAnimation.colorMode ?? "current-line"}
+              options={[
+                { v: "current-line", l: "Current line only" },
+                { v: "all-played", l: "All played lyrics" },
+              ]}
+              onChange={(v) => setLyricAnimation("colorMode", v)} />
+
+            {/* Active color (fill color during singing) */}
+            <ColorRow label="Singing Color" value={lyricAnimation.activeColor}
               onChange={(v) => setLyricAnimation("activeColor", v)} />
 
             {/* Completed color */}
-            <ColorRow label="Done Color" value={lyricAnimation.completedColor}
+            <ColorRow label="Completed" value={lyricAnimation.completedColor}
               onChange={(v) => setLyricAnimation("completedColor", v)} />
 
+            {/* Inactive color */}
+            <ColorRow label="Unsung" value={lyricAnimation.inactiveColor ?? "#ffffff"}
+              onChange={(v) => setLyricAnimation("inactiveColor", v)} />
+
             {/* Transition duration */}
-            <Slider label="Duration (s)" value={lyricAnimation.transitionDuration}
-              min={0.5} max={5} step={0.1}
+            <Slider label="Fill Speed (s)" value={lyricAnimation.transitionDuration}
+              min={0.5} max={10} step={0.1}
               onChange={(v) => setLyricAnimation("transitionDuration", v)} />
           </>
         )}

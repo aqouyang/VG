@@ -113,8 +113,10 @@ export interface VideoConfig {
 
 export interface LyricAnimationConfig {
   enabled: boolean;
-  activeColor: string;
-  completedColor: string;
+  activeColor: string;       // color for characters being sung
+  completedColor: string;    // color for lines already sung
+  inactiveColor: string;     // color for lines not yet sung
+  colorMode: "current-line" | "all-played"; // which lines get colored
   transitionDuration: number; // seconds per line fill
 }
 
