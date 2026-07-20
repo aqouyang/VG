@@ -82,7 +82,14 @@ export default function ExportDock() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pos.x, pos.y]);
 
-  if (jobs.length === 0 || pos.hidden) return null;
+  // Auto-show when new active jobs appear, even if previously closed
+  const hasActive = jobs.some(j => ["rendering", "encoding", "muxing", "preparing", "queued"].includes(j.status));
+  if (jobs.length === 0) return null;
+  if (pos.hidden && !hasActive) return null;
+  if (pos.hidden && hasActive) {
+    // New job started, re-show the dock
+    setPos(p => ({ ...p, hidden: false }));
+  }
 
   const active = jobs.filter(j => ["rendering", "encoding", "muxing", "preparing", "queued"].includes(j.status)).length;
   const done = jobs.filter(j => j.status === "completed").length;
