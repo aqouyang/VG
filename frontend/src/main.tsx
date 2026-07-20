@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import ProjectEditor from "./pages/ProjectEditor";
+import ExportDock from "./components/ExportDock";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
@@ -11,6 +12,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Route path="/" element={<Dashboard />} />
         <Route path="/project/:name" element={<ProjectEditor />} />
       </Routes>
+      <ExportDock />
     </BrowserRouter>
   </React.StrictMode>
 );

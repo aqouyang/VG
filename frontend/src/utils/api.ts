@@ -93,4 +93,19 @@ export const api = {
   // Version
   getVersion: (): Promise<{ version: string; schema_version: number; commit: string; commit_date: string }> =>
     request("/version"),
+
+  // Export jobs
+  detectGpu: () => request("/export/gpu"),
+  getExportSettings: () => request("/export/settings"),
+  saveExportSettings: (s: Record<string, unknown>) =>
+    request("/export/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }),
+  listJobs: () => request("/export/jobs"),
+  getJob: (id: string) => request(`/export/jobs/${id}`),
+  createJob: (project_name: string, output_path?: string) =>
+    request("/export/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_name, output_path }) }),
+  pauseJob: (id: string) => request(`/export/jobs/${id}/pause`, { method: "POST" }),
+  resumeJob: (id: string) => request(`/export/jobs/${id}/resume`, { method: "POST" }),
+  cancelJob: (id: string) => request(`/export/jobs/${id}/cancel`, { method: "POST" }),
+  retryJob: (id: string) => request(`/export/jobs/${id}/retry`, { method: "POST" }),
+  deleteJob: (id: string) => request(`/export/jobs/${id}`, { method: "DELETE" }),
 };

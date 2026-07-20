@@ -14,15 +14,6 @@ const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 interface Toast { id: number; msg: string; type: "info" | "ok" | "err" }
 let _tid = 0;
 
-// ─── Export state ──────────────────────────────────────────────────
-interface ExportState {
-  active: boolean;
-  stage: "preparing" | "rendering" | "encoding" | "done" | "error";
-  current: number;
-  total: number;
-  percent: number;
-  message: string;
-}
 
 export default function ProjectEditor() {
   const { name } = useParams<{ name: string }>();
@@ -41,7 +32,7 @@ export default function ProjectEditor() {
   const [speed, setSpeed] = useState(1);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [undoStack, setUndoStack] = useState<LrcLine[][]>([]);
-  const [exportState, setExportState] = useState<ExportState | null>(null);
+
 
   // ─── REFS ─────────────────────────────────────────────────────────
   // The audio element ref is stable — never changes once set.
@@ -301,45 +292,13 @@ export default function ProjectEditor() {
   // ─── Export ───────────────────────────────────────────────────────
   const doExport = async () => {
     if (!name) return;
-    // Save first
+    // Save config and timestamps first
     await api.updateProject(name, { visual_config: cfg });
     if (lines.some(l => l.time >= 0)) await api.saveLrc(name, lrcLinesToString(lines));
-
-    setExportState({ active: true, stage: "preparing", current: 0, total: 0, percent: 0, message: "Preparing..." });
-
     try {
-      const res = await fetch(`/api/export/${name}/render`, { method: "POST" });
-      if (!res.body) throw new Error("No response stream");
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const jsonLines = buffer.split("\n");
-        buffer = jsonLines.pop() || "";
-        for (const jsonLine of jsonLines) {
-          if (!jsonLine.trim()) continue;
-          try {
-            const msg = JSON.parse(jsonLine);
-            if (msg.type === "progress") {
-              setExportState(s => s ? { ...s, stage: "rendering", current: msg.current, total: msg.total, percent: msg.percent, message: `Rendering frame ${msg.current}/${msg.total}` } : s);
-            } else if (msg.type === "encoding") {
-              setExportState(s => s ? { ...s, stage: "encoding", current: msg.current, total: msg.total, percent: Math.round(msg.current * 100 / msg.total), message: `Encoding ${msg.current}/${msg.total}` } : s);
-            } else if (msg.type === "done") {
-              setExportState(s => s ? { ...s, stage: "done", percent: 100, message: msg.output || "Export complete" } : s);
-            } else if (msg.type === "error") {
-              setExportState(s => s ? { ...s, stage: "error", message: msg.message } : s);
-            }
-          } catch {}
-        }
-      }
-    } catch (e: any) {
-      setExportState(s => s ? { ...s, stage: "error", message: e.message } : s);
-    }
+      await api.createJob(name);
+      toast("Export queued — see bottom panel", "ok");
+    } catch (e: any) { toast("Export failed: " + e.message, "err"); }
   };
 
   // ─── Render ───────────────────────────────────────────────────────
@@ -569,54 +528,7 @@ export default function ProjectEditor() {
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 998, color: "#888", fontSize: 14 }}>{busy}</div>
       )}
 
-      {/* Export modal */}
-      {exportState?.active && (
-        <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, backdropFilter: "blur(4px)" }}>
-          <div style={{ background: "#16161e", borderRadius: 16, padding: SP.xxl, width: 420, border: "1px solid #2a2a3a" }}>
-            <h3 style={{ color: "#fff", fontSize: 18, marginBottom: SP.xl }}>
-              {exportState.stage === "done" ? "Export Complete" : exportState.stage === "error" ? "Export Failed" : "Exporting Video"}
-            </h3>
-
-            {/* Progress bar */}
-            {(exportState.stage === "rendering" || exportState.stage === "encoding") && (
-              <>
-                <div style={{ height: 6, background: "#1a1a2a", borderRadius: 3, marginBottom: SP.md, overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${exportState.percent}%`, background: "#6c5ce7", borderRadius: 3, transition: "width 0.3s" }} />
-                </div>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: "#888", marginBottom: SP.sm }}>
-                  <span>{exportState.stage === "rendering" ? "Rendering" : "Encoding"}</span>
-                  <span style={{ color: "#6c5ce7", fontWeight: 600 }}>{exportState.percent}%</span>
-                </div>
-                <div style={{ fontSize: 12, color: "#555", marginBottom: SP.xl }}>
-                  Frame {exportState.current} / {exportState.total}
-                </div>
-              </>
-            )}
-
-            {exportState.stage === "preparing" && (
-              <div style={{ color: "#888", fontSize: 13, marginBottom: SP.xl }}>Preparing render...</div>
-            )}
-
-            {exportState.stage === "done" && (
-              <div style={{ color: "#6fcf70", fontSize: 13, marginBottom: SP.xl }}>{exportState.message}</div>
-            )}
-
-            {exportState.stage === "error" && (
-              <div style={{ color: "#cf7e7e", fontSize: 13, marginBottom: SP.xl }}>{exportState.message}</div>
-            )}
-
-            <div style={{ display: "flex", justifyContent: "flex-end" }}>
-              <button onClick={() => setExportState(null)} style={{
-                background: exportState.stage === "done" ? "#6c5ce7" : "#2a2a3a",
-                color: "#fff", border: "none", padding: `${SP.sm}px ${SP.xl}px`,
-                borderRadius: SP.sm, cursor: "pointer", fontSize: 13, fontWeight: 500,
-              }}>
-                {exportState.stage === "done" ? "Done" : exportState.stage === "error" ? "Close" : "Cancel"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Export progress is now in the global ExportDock component */}
     </div>
   );
 }
