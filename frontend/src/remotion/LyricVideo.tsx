@@ -121,19 +121,24 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
         <div style={{ color: cfg.artist.color, fontSize: cfg.artist.fontSize * s, fontWeight: cfg.artist.fontWeight, fontFamily: cfg.artist.fontFamily, marginTop: cfg.artist.offsetY * s, opacity: cfg.artist.opacity }}>{artist}</div>
       </div>
 
-      {/* Lyrics */}
+      {/* Lyrics: flow layout for variable-height wrapped lines */}
       <div style={{
         position: "absolute", left: layout.lyrics.x, top: layout.lyrics.y,
         width: layout.lyrics.w, height: layout.lyrics.h,
-        display: "flex", flexDirection: "column", justifyContent: "center",
         overflow: "hidden", opacity: lyricsOpacity,
       }}>
+        <div style={{
+          transform: `translateY(${layout.lyrics.h / 2 - (() => {
+            const spacing = cfg.lyrics.lineSpacing * s;
+            return Math.max(0, activeLine) * spacing + spacing / 2;
+          })()}px)`,
+        }}>
         {lrcLines.map((line, i) => {
           const diff = i - activeLine;
-          if (Math.abs(diff) > cfg.lyrics.visibleLines) return null;
+          if (Math.abs(diff) > cfg.lyrics.visibleLines + 1) return null;
           const isActive = i === activeLine;
           const isPast = diff < 0;
-          const targetY = diff * cfg.lyrics.lineSpacing * s;
+          const spacing = cfg.lyrics.lineSpacing * s;
           const lineOp = isActive
             ? interpolate(currentTime, [line.time, line.time + cfg.lyrics.scrollSpeed * 0.7], [0.5, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" })
             : isPast ? cfg.lyrics.inactiveOpacity : cfg.lyrics.futureOpacity;
@@ -147,14 +152,14 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
             fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
             letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
             textAlign: cfg.lyrics.textAlign as any, whiteSpace: "pre-wrap",
+            width: "100%",
           };
 
           return (
             <div key={i} style={{
-              position: "absolute", top: "50%", left: 0, right: 0,
-              transform: `translateY(${targetY - fontSize / 2}px) scale(${lineScl})`,
+              minHeight: spacing, display: "flex", alignItems: "center",
+              opacity: lineOp, transform: `scale(${lineScl})`,
               transformOrigin: `${cfg.lyrics.textAlign} center`,
-              opacity: lineOp,
             }}>
               {anim.enabled && isActive && progress > 0 ? (
                 <ColoredText text={line.text} progress={progress}
@@ -166,6 +171,7 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
             </div>
           );
         })}
+        </div>
       </div>
     </AbsoluteFill>
   );

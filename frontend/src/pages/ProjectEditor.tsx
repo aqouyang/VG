@@ -240,38 +240,45 @@ export default function ProjectEditor() {
   };
 
   // ─── SLIDER SEEKING ──────────────────────────────────────────────
-  const onSliderDown = useCallback(() => {
-    isSeeking.current = true;
-    const a = audioRef.current;
-    wasPlaying.current = a ? !a.paused : false;
-    if (a && !a.paused) a.pause();
-  }, []);
-
-  const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const v = parseFloat(e.target.value);
-    // During drag: update display and timeRef, but use performSeek
-    // to block stale timeupdate events.
-    seekId.current++;
-    seekTarget.current = v;
-    timeRef.current = v;
-    setTime(v);
-    if (audioRef.current) audioRef.current.currentTime = v;
-  }, []);
-
-  const onSliderUp = useCallback(() => {
-    // Commit the final seek position with full transaction.
+  // mouseup/touchend are attached to WINDOW so they fire even when
+  // the pointer is released outside the slider element. Without this,
+  // isSeeking stays true forever if the user drags off the slider.
+  const commitSeek = useCallback(() => {
     const finalTime = timeRef.current;
     performSeek(finalTime);
     setTimeout(() => {
       isSeeking.current = false;
       const a = audioRef.current;
       if (a) {
-        // Ensure audio is at the committed position
         a.currentTime = finalTime;
         if (wasPlaying.current) a.play();
       }
     }, 150);
   }, [performSeek]);
+
+  const onSliderDown = useCallback(() => {
+    isSeeking.current = true;
+    const a = audioRef.current;
+    wasPlaying.current = a ? !a.paused : false;
+    if (a && !a.paused) a.pause();
+    // Attach release handler to window so it fires even if pointer leaves the slider
+    const onUp = () => {
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchend", onUp);
+      commitSeek();
+    };
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchend", onUp);
+  }, [commitSeek]);
+
+  const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const v = parseFloat(e.target.value);
+    seekId.current++;
+    seekTarget.current = v;
+    timeRef.current = v;
+    setTime(v);
+    if (audioRef.current) audioRef.current.currentTime = v;
+  }, []);
 
   // ─── Stamp / Undo / Nudge ────────────────────────────────────────
   const pushUndo = () => setUndoStack(p => [...p.slice(-19), lines.map(l => ({ ...l }))]);
@@ -540,8 +547,8 @@ export default function ProjectEditor() {
                 }}>{playing ? "\u275A\u275A" : "\u25B6"}</button>
                 <span style={{ fontFamily: "monospace", fontSize: 12, color: "#888", minWidth: 72 }}>{formatTime(time)}</span>
                 <input type="range" min={0} max={project.duration || 100} step={0.01} value={time}
-                  onChange={onSliderChange} onMouseDown={onSliderDown} onMouseUp={onSliderUp}
-                  onTouchStart={onSliderDown} onTouchEnd={onSliderUp}
+                  onChange={onSliderChange} onMouseDown={onSliderDown}
+                  onTouchStart={onSliderDown}
                   style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }} />
                 <span style={{ fontFamily: "monospace", fontSize: 12, color: "#555", minWidth: 72 }}>{formatTime(project.duration || 0)}</span>
                 {speed !== 1 && <span style={{ fontSize: 11, color: "#6c5ce7", fontWeight: 600 }}>{speed}x</span>}

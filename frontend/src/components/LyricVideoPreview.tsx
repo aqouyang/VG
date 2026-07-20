@@ -167,57 +167,72 @@ export default function LyricVideoPreview({
           }}>{project.artist}</div>
         </div>
 
-        {/* Lyrics */}
+        {/* Lyrics: use flow layout so wrapped lines push others down */}
         <div style={{
           position: "absolute", left: layout.lyrics.x, top: layout.lyrics.y,
           width: layout.lyrics.w, height: layout.lyrics.h,
-          display: "flex", flexDirection: "column", justifyContent: "center",
           overflow: "hidden",
         }}>
-          {lrcLines.map((line, i) => {
-            const diff = i - activeLine;
-            if (Math.abs(diff) > cfg.lyrics.visibleLines) return null;
-            const isActive = i === activeLine;
-            const isPast = diff < 0;
-            const yOffset = diff * cfg.lyrics.lineSpacing * s;
-            const fontSize = (isActive ? cfg.lyrics.activeFontSize : cfg.lyrics.inactiveFontSize) * s;
-            const baseOpacity = isActive ? 1 : isPast ? cfg.lyrics.inactiveOpacity : cfg.lyrics.futureOpacity;
-            const lineColor = getLineColor(i);
+          {/* Inner wrapper: translated to keep active line centered */}
+          <div style={{
+            transition: `transform ${cfg.lyrics.scrollSpeed}s ease`,
+            transform: `translateY(${layout.lyrics.h / 2 - (function() {
+              // Calculate offset to center the active line.
+              // Sum heights of lines before active, using lineSpacing as minimum per line.
+              const spacing = cfg.lyrics.lineSpacing * s;
+              let offset = 0;
+              for (let i = 0; i < Math.max(0, activeLine); i++) {
+                offset += spacing;
+              }
+              return offset + spacing / 2;
+            })()}px)`,
+          }}>
+            {lrcLines.map((line, i) => {
+              const diff = i - activeLine;
+              if (Math.abs(diff) > cfg.lyrics.visibleLines + 1) return null;
+              const isActive = i === activeLine;
+              const isPast = diff < 0;
+              const fontSize = (isActive ? cfg.lyrics.activeFontSize : cfg.lyrics.inactiveFontSize) * s;
+              const baseOpacity = isActive ? 1 : isPast ? cfg.lyrics.inactiveOpacity : cfg.lyrics.futureOpacity;
+              const lineColor = getLineColor(i);
+              const spacing = cfg.lyrics.lineSpacing * s;
 
-            return (
-              <div key={i} style={{
-                position: "absolute", top: "50%", left: 0, right: 0,
-                transform: `translateY(${yOffset - fontSize / 2}px)`,
-                transition: `all ${cfg.lyrics.scrollSpeed}s ease`,
-              }}>
-                {anim.enabled && isActive && lineColor.progress > 0 ? (
-                  <ColoredLine
-                    text={line.text}
-                    progress={lineColor.progress}
-                    activeColor={anim.activeColor}
-                    baseColor={anim.inactiveColor}
-                    fontSize={fontSize}
-                    fontWeight={isActive ? cfg.lyrics.activeWeight : 400}
-                    fontFamily={cfg.lyrics.fontFamily}
-                    letterSpacing={(cfg.lyrics.letterSpacing ?? 0) * s}
-                    opacity={baseOpacity}
-                    textAlign={cfg.lyrics.textAlign}
-                  />
-                ) : (
-                  <div style={{
-                    color: lineColor.color, fontSize,
-                    fontWeight: isActive ? cfg.lyrics.activeWeight : 400,
-                    fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
-                    letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
-                    opacity: baseOpacity,
-                    textAlign: cfg.lyrics.textAlign as any,
-                  }}>
-                    {line.text}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+              return (
+                <div key={i} style={{
+                  minHeight: spacing,
+                  display: "flex", alignItems: "center",
+                  transition: `opacity ${cfg.lyrics.scrollSpeed}s ease`,
+                }}>
+                  {anim.enabled && isActive && lineColor.progress > 0 ? (
+                    <ColoredLine
+                      text={line.text}
+                      progress={lineColor.progress}
+                      activeColor={anim.activeColor}
+                      baseColor={anim.inactiveColor}
+                      fontSize={fontSize}
+                      fontWeight={isActive ? cfg.lyrics.activeWeight : 400}
+                      fontFamily={cfg.lyrics.fontFamily}
+                      letterSpacing={(cfg.lyrics.letterSpacing ?? 0) * s}
+                      opacity={baseOpacity}
+                      textAlign={cfg.lyrics.textAlign}
+                    />
+                  ) : (
+                    <div style={{
+                      color: lineColor.color, fontSize,
+                      fontWeight: isActive ? cfg.lyrics.activeWeight : 400,
+                      fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
+                      letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
+                      opacity: baseOpacity,
+                      textAlign: cfg.lyrics.textAlign as any,
+                      width: "100%",
+                    }}>
+                      {line.text}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>

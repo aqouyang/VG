@@ -534,49 +534,48 @@ def render_fast(
         raise RuntimeError(f"ASS file not found: {ass_path}")
 
     # ── Build FFmpeg command ──
-    # To avoid ALL path escaping issues with FFmpeg filter syntax on
-    # Windows (drive colons, spaces, unicode), copy the ASS file to
-    # a simple temp name next to the output, then use a relative or
-    # simple path.
+    # To avoid ALL Windows path escaping issues (drive colons parsed as
+    # filter options, backslashes, unicode), run FFmpeg with CWD set to
+    # the directory containing lyrics.ass. The filter uses only the
+    # relative filename "lyrics.ass" with no path at all.
     import shutil
     import tempfile
-    ass_temp_dir = tempfile.mkdtemp(prefix="ls_render_")
-    ass_temp = os.path.join(ass_temp_dir, "lyrics.ass")
-    shutil.copy2(ass_path, ass_temp)
+    ass_work_dir = tempfile.mkdtemp(prefix="ls_render_")
+    ass_local = os.path.join(ass_work_dir, "lyrics.ass")
+    shutil.copy2(ass_path, ass_local)
 
-    # Use forward slashes and escape colon for the temp path.
-    # Temp dirs usually don't have special chars, but escape anyway.
-    ass_filter_path = ass_temp.replace("\\", "/").replace(":", "\\:")
-
-    # Use 'ass' filter (no original_size option). Fall back to subtitles.
+    # Use 'ass' filter (no original_size). Fall back to subtitles.
     filter_name = "ass" if has_ass_filter else "subtitles"
-    vf = f"{filter_name}={ass_filter_path},format=yuv420p"
+    vf = f"{filter_name}=lyrics.ass,format=yuv420p"
 
-    # Assert no original_size leaked in
-    if "original_size" in vf:
-        raise RuntimeError(f"Internal error: original_size in filter expression: {vf}")
+    # Hard assertions: the filter must contain no absolute path components
+    for bad in ["original_size", "C:", "D:", "E:", "\\"]:
+        if bad in vf:
+            raise RuntimeError(f"Internal error: filter contains '{bad}': {vf}")
 
+    # All -i paths must be absolute (they are normal arguments, not filter values)
     cmd = [
         ffmpeg_exe, "-y",
-        "-loop", "1", "-framerate", str(fps), "-i", base_frame_path,
-        "-i", audio_path,
+        "-loop", "1", "-framerate", str(fps), "-i", os.path.abspath(base_frame_path),
+        "-i", os.path.abspath(audio_path),
         "-vf", vf,
         "-t", str(duration),
         *encoder_args,
         "-c:a", "aac", "-b:a", settings.get("audioBitrate", "192k"),
         "-shortest",
-        "-progress", progress_pipe,
-        output_path,
+        "-progress", os.path.abspath(progress_pipe),
+        os.path.abspath(output_path),
     ]
 
     # ── Preflight diagnostics ──
     diag = {
+        "platform": sys.platform,
         "canvas": f"{w}x{h}",
         "fps": fps,
         "duration": duration,
-        "ass_source": ass_path,
-        "ass_temp": ass_temp,
-        "ass_filter_path": ass_filter_path,
+        "ffmpeg": ffmpeg_exe,
+        "cwd": ass_work_dir,
+        "ass_local_exists": os.path.isfile(ass_local),
         "filter_name": filter_name,
         "vf": vf,
         "encoder": encoder_args,
@@ -588,11 +587,11 @@ def render_fast(
 
     t_enc_start = time.time()
     ffmpeg_output_lines = []
-    # Do NOT use shell=True. FFmpeg is a real executable, not a batch
-    # script. shell=True causes cmd.exe to mangle backslash escapes.
+    # CWD is the temp dir containing lyrics.ass so the filter uses
+    # only the relative filename. No shell=True (FFmpeg is an exe).
     proc = subprocess.Popen(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        text=True, bufsize=1, cwd=ass_work_dir,
     )
 
     # Parse progress from the progress file, collect output for error reporting
@@ -642,7 +641,7 @@ def render_fast(
     # Cleanup temp files
     if os.path.exists(progress_pipe):
         os.remove(progress_pipe)
-    shutil.rmtree(ass_temp_dir, ignore_errors=True)
+    shutil.rmtree(ass_work_dir, ignore_errors=True)
 
     if proc.returncode != 0:
         # Build detailed error message from FFmpeg output
