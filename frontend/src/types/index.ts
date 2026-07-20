@@ -39,34 +39,37 @@ export interface VisualConfig {
   title: TitleConfig;
   artist: ArtistConfig;
   background: BackgroundConfig;
+  video: VideoConfig;
+  lyricAnimation: LyricAnimationConfig;
 }
 
 export interface CoverConfig {
   position: "left" | "center" | "right";
-  offsetX: number; // px offset from position anchor (at 1920 scale)
+  offsetX: number;
   offsetY: number;
-  widthPercent: number; // percent of frame width, 5-80
-  borderRadius: number; // px at 1920 scale
-  shadowIntensity: number; // 0-1
+  widthPercent: number;
+  borderRadius: number;
+  shadowIntensity: number;
 }
 
 export interface LyricsConfig {
   position: "left" | "center" | "right";
   offsetX: number;
   offsetY: number;
-  widthPercent: number; // percent of frame width
+  widthPercent: number;
   verticalAlign: "top" | "center" | "bottom";
   textAlign: "left" | "center" | "right";
   fontFamily: string;
-  activeFontSize: number; // px at 1920 scale
+  activeFontSize: number;
   inactiveFontSize: number;
-  lineSpacing: number; // px between lines at 1920 scale
+  lineSpacing: number;
+  letterSpacing: number;
   activeColor: string;
   activeWeight: number;
-  inactiveOpacity: number; // 0-1 for past lines
-  futureOpacity: number; // 0-1 for upcoming lines
-  scrollSpeed: number; // transition duration in seconds
-  visibleLines: number; // how many lines above/below active to show
+  inactiveOpacity: number;
+  futureOpacity: number;
+  scrollSpeed: number;
+  visibleLines: number;
 }
 
 export interface TitleConfig {
@@ -86,20 +89,33 @@ export interface ArtistConfig {
   fontWeight: number;
   color: string;
   opacity: number;
-  offsetY: number; // gap below title
+  offsetY: number;
 }
 
 export type BackgroundType = "blurred-cover" | "solid" | "gradient";
 
 export interface BackgroundConfig {
   type: BackgroundType;
-  blurAmount: number; // px
-  brightness: number; // 0-1
-  overlayOpacity: number; // 0-1, dark overlay
+  blurAmount: number;
+  brightness: number;
+  overlayOpacity: number;
   solidColor: string;
   gradientFrom: string;
   gradientTo: string;
-  gradientAngle: number; // degrees
+  gradientAngle: number;
+}
+
+export interface VideoConfig {
+  width: number;
+  height: number;
+  fps: number;
+}
+
+export interface LyricAnimationConfig {
+  enabled: boolean;
+  activeColor: string;
+  completedColor: string;
+  transitionDuration: number; // seconds per line fill
 }
 
 // --- Themes ---

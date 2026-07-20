@@ -18,15 +18,19 @@ const defaultProps: LyricVideoProps = {
 };
 
 export const RemotionRoot: React.FC = () => {
+  const w = defaultVisualConfig.video?.width ?? 1920;
+  const h = defaultVisualConfig.video?.height ?? 1080;
+  const fps = defaultVisualConfig.video?.fps ?? 30;
+
   return (
     <>
       <Composition
         id="LyricVideo"
         component={LyricVideo as unknown as React.FC<Record<string, unknown>>}
         durationInFrames={450}
-        fps={30}
-        width={1920}
-        height={1080}
+        fps={fps}
+        width={w}
+        height={h}
         defaultProps={defaultProps as unknown as Record<string, unknown>}
       />
     </>

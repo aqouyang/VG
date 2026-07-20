@@ -20,6 +20,7 @@ export const defaultVisualConfig: VisualConfig = {
     activeFontSize: 32,
     inactiveFontSize: 24,
     lineSpacing: 56,
+    letterSpacing: 0,
     activeColor: "#ffffff",
     activeWeight: 600,
     inactiveOpacity: 0.25,
@@ -55,6 +56,17 @@ export const defaultVisualConfig: VisualConfig = {
     gradientTo: "#0a0a0f",
     gradientAngle: 135,
   },
+  video: {
+    width: 1920,
+    height: 1080,
+    fps: 30,
+  },
+  lyricAnimation: {
+    enabled: false,
+    activeColor: "#ffffff",
+    completedColor: "#ffffff",
+    transitionDuration: 0.5,
+  },
 };
 
 export const builtInThemes: Theme[] = [
@@ -86,6 +98,7 @@ export const builtInThemes: Theme[] = [
         activeFontSize: 30,
         inactiveFontSize: 22,
         lineSpacing: 52,
+        letterSpacing: 0,
         activeColor: "#ffffff",
         activeWeight: 400,
         inactiveOpacity: 0.2,
@@ -121,6 +134,17 @@ export const builtInThemes: Theme[] = [
         gradientTo: "#0a0a0f",
         gradientAngle: 135,
       },
+      video: {
+        width: 1920,
+        height: 1080,
+        fps: 30,
+      },
+      lyricAnimation: {
+        enabled: false,
+        activeColor: "#ffffff",
+        completedColor: "#ffffff",
+        transitionDuration: 0.5,
+      },
     },
   },
   {
@@ -146,6 +170,7 @@ export const builtInThemes: Theme[] = [
         activeFontSize: 36,
         inactiveFontSize: 26,
         lineSpacing: 60,
+        letterSpacing: 0,
         activeColor: "#f0e68c",
         activeWeight: 700,
         inactiveOpacity: 0.3,
@@ -181,6 +206,17 @@ export const builtInThemes: Theme[] = [
         gradientTo: "#0a0a0f",
         gradientAngle: 180,
       },
+      video: {
+        width: 1920,
+        height: 1080,
+        fps: 30,
+      },
+      lyricAnimation: {
+        enabled: false,
+        activeColor: "#ffffff",
+        completedColor: "#ffffff",
+        transitionDuration: 0.5,
+      },
     },
   },
 ];
@@ -196,5 +232,7 @@ export function mergeConfig(
     title: { ...base.title, ...partial.title },
     artist: { ...base.artist, ...partial.artist },
     background: { ...base.background, ...partial.background },
+    video: { ...base.video, ...partial.video },
+    lyricAnimation: { ...base.lyricAnimation, ...partial.lyricAnimation },
   };
 }

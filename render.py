@@ -66,7 +66,13 @@ def main():
     audio_path = os.path.join(project_dir, "audio", project["audio_file"])
     info = sf.info(audio_path)
     duration = float(info.duration)
-    total_frames = int(duration * 30)
+
+    # Video settings from config
+    vc = project.get("visual_config", {}).get("video", {})
+    render_fps = vc.get("fps", 30)
+    render_w = vc.get("width", 1920)
+    render_h = vc.get("height", 1080)
+    total_frames = int(duration * render_fps)
 
     # Create input props for Remotion
     props = {
@@ -103,11 +109,12 @@ def main():
     if not os.path.exists(cover_dst) or os.path.getmtime(cover_src) > os.path.getmtime(cover_dst):
         shutil.copy2(cover_src, cover_dst)
 
-    print(f"Rendering {project_name}...")
-    print(f"  Duration: {duration:.1f}s")
-    print(f"  Frames: {total_frames}")
-    print(f"  Visual config: {'custom' if project.get('visual_config') else 'default'}")
-    print(f"  Output: {output_path}")
+    print(f"\033[1mRendering {project_name}\033[0m")
+    print(f"  Resolution: {render_w}x{render_h} @ {render_fps}fps")
+    print(f"  Duration:   {duration:.1f}s ({total_frames} frames)")
+    print(f"  Config:     {'custom' if project.get('visual_config') else 'default'}")
+    print(f"  Output:     {output_path}")
+    print()
 
     # Run Remotion render
     cmd = [
@@ -117,6 +124,8 @@ def main():
         output_path,
         f"--props={props_path}",
         f"--frames=0-{total_frames - 1}",
+        f"--width={render_w}",
+        f"--height={render_h}",
     ]
 
     result = subprocess.run(cmd, cwd=os.path.join(ROOT, "frontend"))
