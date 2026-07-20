@@ -171,11 +171,17 @@ def resolve(force_refresh=False):
                 "h264_qsv", "hevc_qsv", "h264_amf", "hevc_amf"]:
         result["encoders"][enc] = enc in out
 
-    # Filters (check for ass/subtitles)
+    # Filters (check for ass/subtitles with precise matching)
     ok, out = _run_check(ffmpeg, ["-hide_banner", "-filters"])
-    for filt in ["ass", "subtitles"]:
-        if filt in out:
-            result["filters"].append(filt)
+    for line in out.split("\n"):
+        stripped = line.strip()
+        # Filter lines look like: "... ass  V->V  Render ASS..."
+        # Match the filter name as a whole word
+        parts = stripped.split()
+        for filt in ["ass", "subtitles"]:
+            if filt in parts:
+                if filt not in result["filters"]:
+                    result["filters"].append(filt)
 
     result["valid"] = True
 

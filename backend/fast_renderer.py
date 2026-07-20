@@ -519,7 +519,7 @@ def render_fast(
 
     # ── Preflight: check FFmpeg has ass or subtitles filter ──
     from ffmpeg_resolver import resolve as ffmpeg_resolve
-    ffinfo = ffmpeg_resolve()
+    ffinfo = ffmpeg_resolve(force_refresh=True)
     has_ass_filter = "ass" in ffinfo.get("filters", [])
     has_sub_filter = "subtitles" in ffinfo.get("filters", [])
     if not has_ass_filter and not has_sub_filter:
@@ -533,17 +533,28 @@ def render_fast(
     if not os.path.isfile(ass_path):
         raise RuntimeError(f"ASS file not found: {ass_path}")
 
-    # ── Build FFmpeg filter string ──
-    # FFmpeg filter syntax requires escaping: \ : ' [ ] ; ,
-    # Use the 'ass' filter (simpler than 'subtitles', no original_size).
-    # Escape ALL colons and backslashes in the path.
-    ass_for_filter = ass_path.replace("\\", "/")
-    ass_for_filter = ass_for_filter.replace(":", "\\:")
+    # ── Build FFmpeg command ──
+    # To avoid ALL path escaping issues with FFmpeg filter syntax on
+    # Windows (drive colons, spaces, unicode), copy the ASS file to
+    # a simple temp name next to the output, then use a relative or
+    # simple path.
+    import shutil
+    import tempfile
+    ass_temp_dir = tempfile.mkdtemp(prefix="ls_render_")
+    ass_temp = os.path.join(ass_temp_dir, "lyrics.ass")
+    shutil.copy2(ass_path, ass_temp)
 
-    if has_ass_filter:
-        vf = f"ass={ass_for_filter},format=yuv420p"
-    else:
-        vf = f"subtitles={ass_for_filter},format=yuv420p"
+    # Use forward slashes and escape colon for the temp path.
+    # Temp dirs usually don't have special chars, but escape anyway.
+    ass_filter_path = ass_temp.replace("\\", "/").replace(":", "\\:")
+
+    # Use 'ass' filter (no original_size option). Fall back to subtitles.
+    filter_name = "ass" if has_ass_filter else "subtitles"
+    vf = f"{filter_name}={ass_filter_path},format=yuv420p"
+
+    # Assert no original_size leaked in
+    if "original_size" in vf:
+        raise RuntimeError(f"Internal error: original_size in filter expression: {vf}")
 
     cmd = [
         ffmpeg_exe, "-y",
@@ -558,16 +569,18 @@ def render_fast(
         output_path,
     ]
 
-    # ── Preflight diagnostics (written to cache for debugging) ──
+    # ── Preflight diagnostics ──
     diag = {
         "canvas": f"{w}x{h}",
         "fps": fps,
         "duration": duration,
-        "ass_path": ass_path,
-        "ass_exists": os.path.isfile(ass_path),
-        "filter": vf.split(",")[0],
+        "ass_source": ass_path,
+        "ass_temp": ass_temp,
+        "ass_filter_path": ass_filter_path,
+        "filter_name": filter_name,
+        "vf": vf,
         "encoder": encoder_args,
-        "cmd": cmd,
+        "cmd_args": [str(a) for a in cmd],
     }
     diag_path = os.path.join(cache_path, "render-diag.json")
     with open(diag_path, "w") as f:
@@ -626,9 +639,10 @@ def render_fast(
     proc.wait()
     t_encode = time.time() - t_enc_start
 
-    # Cleanup progress file
+    # Cleanup temp files
     if os.path.exists(progress_pipe):
         os.remove(progress_pipe)
+    shutil.rmtree(ass_temp_dir, ignore_errors=True)
 
     if proc.returncode != 0:
         # Build detailed error message from FFmpeg output
