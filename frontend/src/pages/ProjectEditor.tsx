@@ -181,7 +181,14 @@ export default function ProjectEditor() {
   // ─── Helpers ──────────────────────────────────────────────────────
   const togglePlay = () => {
     const a = audioRef.current; if (!a) return;
-    if (a.paused) a.play(); else a.pause();
+    if (a.paused) {
+      // Always sync audio position to the authoritative time before playing.
+      // This prevents the "starts from 0" bug when play is pressed after seeking.
+      a.currentTime = timeRef.current;
+      a.play();
+    } else {
+      a.pause();
+    }
   };
 
   const seekTo = (t: number) => {
@@ -217,7 +224,12 @@ export default function ProjectEditor() {
   const onSliderUp = useCallback(() => {
     setTimeout(() => {
       isSeeking.current = false;
-      if (wasPlaying.current && audioRef.current) audioRef.current.play();
+      const a = audioRef.current;
+      if (a) {
+        // Re-sync position before resuming, in case the browser lost it
+        a.currentTime = timeRef.current;
+        if (wasPlaying.current) a.play();
+      }
     }, 100);
   }, []);
 
