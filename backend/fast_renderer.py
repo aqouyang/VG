@@ -505,6 +505,7 @@ def render_fast(
     output_path: str,
     settings: dict,
     on_progress=None,
+    on_process_started=None,
 ) -> dict:
     """
     Fast render pipeline:
@@ -674,6 +675,10 @@ def render_fast(
         cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
         text=True, bufsize=1, cwd=ass_work_dir,
     )
+
+    # Register the process so it can be paused/cancelled externally
+    if on_process_started:
+        on_process_started(proc)
 
     # Parse progress from the progress file, collect output for error reporting
     last_pct = 20

@@ -238,7 +238,7 @@ def get_job(job_id: str):
 class CreateJobRequest(BaseModel):
     project_name: str
     output_path: Optional[str] = None
-    engine: Optional[str] = "auto"  # "auto", "fast", "advanced"
+    engine: Optional[str] = "auto"  # "auto", "fast", "record", "advanced"
 
 
 @router.post("/jobs")
@@ -287,6 +287,10 @@ def create_job(req: CreateJobRequest):
         from fast_renderer import check_fast_compatible
         compatible, unsupported = check_fast_compatible(project.get("visual_config", {}))
         engine = "fast" if compatible else "advanced"
+    # "record" uses the same Remotion path as "advanced" but without chunking
+    # (single pass, preserves exact preview appearance)
+    if engine == "record":
+        chunks = [{"start": 0, "end": total_frames - 1, "status": "pending"}]
 
     job_id = uuid.uuid4().hex[:12]
     job = {
@@ -329,6 +333,45 @@ def create_job(req: CreateJobRequest):
     return job
 
 
+# ─── Process suspension helpers ──────────────────────────────────────
+
+def _suspend_process(proc: subprocess.Popen) -> bool:
+    """Suspend a process (SIGSTOP on Linux, SuspendThread on Windows)."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x0002, False, proc.pid)  # PROCESS_SET_INFORMATION (not needed, use debug)
+            # Use NtSuspendProcess which suspends all threads
+            ntdll = ctypes.windll.ntdll
+            ntdll.NtSuspendProcess(handle)
+            kernel32.CloseHandle(handle)
+        else:
+            import signal
+            os.kill(proc.pid, signal.SIGSTOP)
+        return True
+    except Exception:
+        return False
+
+
+def _resume_process(proc: subprocess.Popen) -> bool:
+    """Resume a suspended process."""
+    try:
+        if sys.platform == "win32":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            handle = kernel32.OpenProcess(0x0800, False, proc.pid)  # PROCESS_SUSPEND_RESUME
+            ntdll = ctypes.windll.ntdll
+            ntdll.NtResumeProcess(handle)
+            kernel32.CloseHandle(handle)
+        else:
+            import signal
+            os.kill(proc.pid, signal.SIGCONT)
+        return True
+    except Exception:
+        return False
+
+
 @router.post("/jobs/{job_id}/pause")
 def pause_job(job_id: str):
     with _job_lock:
@@ -337,12 +380,19 @@ def pause_job(job_id: str):
         raise HTTPException(404)
     if job["status"] not in ("rendering", "encoding", "queued"):
         raise HTTPException(400, f"Cannot pause job in status {job['status']}")
+
+    # Actually suspend the running process instead of killing it
+    proc = _active_procs.get(job_id)
+    if proc and proc.poll() is None:
+        suspended = _suspend_process(proc)
+        if not suspended:
+            # Fallback: for chunked renderer, just mark paused and let the
+            # chunk loop check the status. The current chunk finishes but
+            # no new chunk starts.
+            pass
+
     job["status"] = "paused"
     _save_job(job)
-    # Kill active process
-    proc = _active_procs.pop(job_id, None)
-    if proc:
-        proc.terminate()
     return job
 
 
@@ -354,6 +404,16 @@ def resume_job(job_id: str):
         raise HTTPException(404)
     if job["status"] not in ("paused", "interrupted", "failed"):
         raise HTTPException(400, f"Cannot resume job in status {job['status']}")
+
+    # Resume suspended process if it's still alive
+    proc = _active_procs.get(job_id)
+    if proc and proc.poll() is None:
+        _resume_process(proc)
+        job["status"] = "rendering"
+        _save_job(job)
+        return job
+
+    # Process was terminated or doesn't exist. Re-queue the job.
     job["status"] = "queued"
     job["error"] = ""
     _save_job(job)
@@ -721,6 +781,10 @@ def _run_fast_job(job: dict):
     start_time = time.time()
 
     def on_progress(stage, pct, speed):
+        # Check if paused
+        with _job_lock:
+            if _jobs.get(job_id, {}).get("status") == "paused":
+                return
         job["stage"] = stage
         job["percent"] = max(job.get("percent", 0), pct)  # monotonic
         job["render_fps"] = round(speed, 1) if speed else 0
@@ -731,6 +795,9 @@ def _run_fast_job(job: dict):
         if stage == "encoding":
             job["status"] = "rendering"
         _save_job(job)
+
+    def on_process_started(proc):
+        _active_procs[job_id] = proc
 
     job["status"] = "rendering"
     job["seq"] = _next_seq(job_id)
@@ -743,6 +810,7 @@ def _run_fast_job(job: dict):
             job["output_path"],
             settings,
             on_progress=on_progress,
+            on_process_started=on_process_started,
         )
 
         job["status"] = "completed"

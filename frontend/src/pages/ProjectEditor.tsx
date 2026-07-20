@@ -380,7 +380,7 @@ export default function ProjectEditor() {
   };
 
   // ─── Export ───────────────────────────────────────────────────────
-  const [renderMode, setRenderMode] = useState<"auto" | "fast" | "advanced">("auto");
+  const [renderMode, setRenderMode] = useState<"auto" | "fast" | "record" | "advanced">("auto");
 
   const doExport = async () => {
     if (!name) return;
@@ -463,16 +463,17 @@ export default function ProjectEditor() {
           </Panel>
 
           <Panel title="Export">
-            <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.sm }}>
-              {([["auto", "Auto"], ["fast", "Fast render"], ["advanced", "Exact preview"]] as const).map(([v, l]) => (
+            <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.sm, flexWrap: "wrap" }}>
+              {([["auto", "Auto"], ["fast", "Fast"], ["record", "Record"], ["advanced", "Exact"]] as const).map(([v, l]) => (
                 <button key={v} onClick={() => setRenderMode(v)} style={{
-                  flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "none", fontSize: 10, cursor: "pointer",
+                  flex: 1, minWidth: 50, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "none", fontSize: 10, cursor: "pointer",
                   background: renderMode === v ? "#6c5ce7" : "#1a1a28", color: renderMode === v ? "#fff" : "#666",
                 }}>{l}</button>
               ))}
             </div>
             <div style={{ fontSize: 10, color: "#555", marginBottom: SP.sm }}>
               {renderMode === "fast" ? "Fast compositing. Some transitions approximated." :
+               renderMode === "record" ? "Record preview. Preserves exact appearance. Takes about the video length." :
                renderMode === "advanced" ? "Frame by frame. Slower but visually exact." :
                "Auto selects the best mode."}
             </div>
