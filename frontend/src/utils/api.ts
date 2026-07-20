@@ -101,8 +101,9 @@ export const api = {
     request("/export/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(s) }),
   listJobs: () => request("/export/jobs"),
   getJob: (id: string) => request(`/export/jobs/${id}`),
-  createJob: (project_name: string, output_path?: string) =>
-    request("/export/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_name, output_path }) }),
+  createJob: (project_name: string, output_path?: string, engine?: string) =>
+    request("/export/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project_name, output_path, engine }) }),
+  checkRenderer: (name: string) => request(`/export/check/${name}`),
   pauseJob: (id: string) => request(`/export/jobs/${id}/pause`, { method: "POST" }),
   resumeJob: (id: string) => request(`/export/jobs/${id}/resume`, { method: "POST" }),
   cancelJob: (id: string) => request(`/export/jobs/${id}/cancel`, { method: "POST" }),

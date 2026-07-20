@@ -131,7 +131,7 @@ export default function ExportDock() {
                   <span style={{ color: STATUS_COLORS[job.status] ?? "#888", fontSize: 9, textTransform: "uppercase", fontWeight: 600 }}>{job.status}</span>
                 </div>
                 <div style={{ color: "#444", fontSize: 10, marginTop: 1 }}>
-                  {job.width}x{job.height} {job.fps}fps
+                  {(job as any).engine === "fast" ? "Fast" : "Adv"} {job.width}x{job.height} {job.fps}fps
                   {job.render_fps > 0 ? ` (${job.render_fps} fps)` : ""}
                   {job.eta > 0 && job.status === "rendering" ? ` ~${fmtTime(job.eta)}` : ""}
                 </div>

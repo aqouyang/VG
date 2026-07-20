@@ -220,6 +220,7 @@ def get_job(job_id: str):
 class CreateJobRequest(BaseModel):
     project_name: str
     output_path: Optional[str] = None
+    engine: Optional[str] = "auto"  # "auto", "fast", "advanced"
 
 
 @router.post("/jobs")
@@ -262,6 +263,13 @@ def create_job(req: CreateJobRequest):
 
     output = req.output_path or os.path.join(EXPORTS_DIR, f"{req.project_name}.mp4")
 
+    # Determine rendering engine
+    engine = req.engine or "auto"
+    if engine == "auto":
+        from fast_renderer import check_fast_compatible
+        compatible, unsupported = check_fast_compatible(project.get("visual_config", {}))
+        engine = "fast" if compatible else "advanced"
+
     job_id = uuid.uuid4().hex[:12]
     job = {
         "id": job_id,
@@ -274,6 +282,7 @@ def create_job(req: CreateJobRequest):
         "fps": fps,
         "duration": duration,
         "total_frames": total_frames,
+        "engine": engine,
         "encoder": settings.get("encoder", "auto"),
         "preset": settings.get("preset", "balanced"),
         "status": "queued",
@@ -443,7 +452,7 @@ def _process_queue():
 
 
 def _run_job(job: dict):
-    """Execute a single export job with chunked rendering."""
+    """Execute a single export job. Dispatches to fast or advanced renderer."""
     job_id = job["id"]
     project_name = job["project_name"]
     total_frames = job["total_frames"]
@@ -452,6 +461,13 @@ def _run_job(job: dict):
     job["seq"] = _next_seq(job_id)
     _save_job(job)
 
+    engine = job.get("engine", "advanced")
+
+    if engine == "fast":
+        _run_fast_job(job)
+        return
+
+    # Advanced renderer (Remotion, chunked)
     # Set up cache directory
     cache_dir = os.path.join(RENDER_CACHE_DIR, job_id)
     chunks_dir = os.path.join(cache_dir, "chunks")
@@ -674,6 +690,71 @@ def _run_job(job: dict):
                 os.remove(p)
     except Exception:
         pass
+
+
+# ─── Fast renderer job execution ──────────────────────────────────────
+
+def _run_fast_job(job: dict):
+    """Execute a fast renderer job (Pillow + ASS + FFmpeg)."""
+    from fast_renderer import render_fast
+    job_id = job["id"]
+    start_time = time.time()
+
+    def on_progress(stage, pct, speed):
+        job["stage"] = stage
+        job["percent"] = max(job.get("percent", 0), pct)  # monotonic
+        job["render_fps"] = round(speed, 1) if speed else 0
+        job["elapsed"] = round(time.time() - start_time, 1)
+        remaining = (job["duration"] / max(speed, 0.01) - job["elapsed"]) if speed > 0 else 0
+        job["eta"] = max(0, round(remaining, 1))
+        job["seq"] = _next_seq(job_id)
+        if stage == "encoding":
+            job["status"] = "rendering"
+        _save_job(job)
+
+    job["status"] = "rendering"
+    job["seq"] = _next_seq(job_id)
+    _save_job(job)
+
+    try:
+        settings = _load_settings()
+        result = render_fast(
+            job["project_name"],
+            job["output_path"],
+            settings,
+            on_progress=on_progress,
+        )
+
+        job["status"] = "completed"
+        job["stage"] = "done"
+        job["percent"] = 100
+        job["finished"] = time.strftime("%Y-%m-%dT%H:%M:%S")
+        job["elapsed"] = round(time.time() - start_time, 1)
+        job["render_fps"] = 0
+        job["eta"] = 0
+        job["seq"] = _next_seq(job_id)
+        _save_job(job)
+    except Exception as e:
+        job["status"] = "failed"
+        job["error"] = str(e)
+        job["seq"] = _next_seq(job_id)
+        _save_job(job)
+
+
+# ─── Capability check endpoint ───────────────────────────────────────
+
+@router.get("/check/{name}")
+def check_renderer_compat(name: str):
+    """Check if a project is compatible with Fast Renderer."""
+    project_path = os.path.join(PROJECTS_DIR, name)
+    pj_path = os.path.join(project_path, "project.json")
+    if not os.path.exists(pj_path):
+        raise HTTPException(404, "Project not found")
+    with open(pj_path) as f:
+        project = json.load(f)
+    from fast_renderer import check_fast_compatible
+    compatible, unsupported = check_fast_compatible(project.get("visual_config", {}))
+    return {"fast_compatible": compatible, "unsupported_features": unsupported, "recommended": "fast" if compatible else "advanced"}
 
 
 # ─── Legacy streaming endpoint (backward compat) ─────────────────────
