@@ -508,20 +508,32 @@ def render_fast(
     ffmpeg_exe = get_ffmpeg()
     encoder_args = _select_encoder(settings)
 
-    # Escape ASS path for FFmpeg filter.
-    # On Windows: convert backslashes to forward slashes, escape colons.
-    # On Linux: escape colons and special chars.
-    ass_escaped = ass_path.replace("\\", "/")
-    if ":" in ass_escaped:
-        ass_escaped = ass_escaped.replace(":", "\\:")
-
     progress_pipe = os.path.join(cache_path, "progress.txt")
+
+    # Build FFmpeg filter string for ASS subtitles.
+    # On Windows, FFmpeg filter paths need special escaping:
+    #   - backslashes to forward slashes
+    #   - colons escaped EXCEPT drive letter colons (C:)
+    #   - single quotes for the filename in the filter expression
+    # Use the 'subtitles' filter which handles paths more reliably.
+    ass_for_filter = ass_path.replace("\\", "/")
+    # Escape colons that are NOT drive letters (X:/)
+    if sys.platform == "win32":
+        # Only escape colons after the drive letter
+        if len(ass_for_filter) > 2 and ass_for_filter[1] == ":":
+            ass_for_filter = ass_for_filter[0:2] + ass_for_filter[2:].replace(":", "\\:")
+    else:
+        ass_for_filter = ass_for_filter.replace(":", "\\:")
+    # Escape single quotes and backslashes in the path for filter syntax
+    ass_for_filter = ass_for_filter.replace("'", "'\\''")
+
+    vf = f"subtitles=filename='{ass_for_filter}',format=yuv420p"
 
     cmd = [
         ffmpeg_exe, "-y",
         "-loop", "1", "-framerate", str(fps), "-i", base_frame_path,
         "-i", audio_path,
-        "-vf", f"ass={ass_escaped},format=yuv420p",
+        "-vf", vf,
         "-t", str(duration),
         *encoder_args,
         "-c:a", "aac", "-b:a", settings.get("audioBitrate", "192k"),
