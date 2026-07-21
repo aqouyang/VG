@@ -130,7 +130,7 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
 
             return (
               <div key={line.index} style={{
-                minHeight: spacing, display: "flex", alignItems: "center",
+                height: spacing, display: "flex", alignItems: "center", overflow: "hidden",
                 opacity: line.opacity,
               }}>
                 {anim.enabled && line.isActive && line.fillProgress > 0 ? (

@@ -118,7 +118,7 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
               const lineColor = _getColor(line, anim, cfg);
               return (
                 <div key={line.index} style={{
-                  minHeight: spacing, display: "flex", alignItems: "center",
+                  height: spacing, display: "flex", alignItems: "center", overflow: "hidden",
                   opacity: line.opacity,
                   transition: `opacity ${cfg.lyrics.scrollSpeed}s ease`,
                 }}>
