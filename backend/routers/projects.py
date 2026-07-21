@@ -20,6 +20,7 @@ class ProjectUpdate(BaseModel):
     title: Optional[str] = None
     artist: Optional[str] = None
     visual_config: Optional[dict] = None
+    layouts: Optional[dict] = None
 
 
 def get_project_path(name: str) -> str:
@@ -118,6 +119,8 @@ def update_project(name: str, update: ProjectUpdate):
         data["artist"] = update.artist
     if update.visual_config is not None:
         data["visual_config"] = update.visual_config
+    if update.layouts is not None:
+        data["layouts"] = update.layouts
     save_project_json(name, data)
     return data
 

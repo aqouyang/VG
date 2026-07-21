@@ -26,7 +26,7 @@ export const api = {
   deleteProject: (name: string) =>
     request(`/projects/${name}`, { method: "DELETE" }),
 
-  updateProject: (name: string, data: { title?: string; artist?: string; visual_config?: VisualConfig }) =>
+  updateProject: (name: string, data: { title?: string; artist?: string; visual_config?: VisualConfig; layouts?: any }) =>
     request(`/projects/${name}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },

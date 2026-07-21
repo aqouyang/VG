@@ -3,9 +3,10 @@ import { useParams, useNavigate } from "react-router-dom";
 import { api } from "../utils/api";
 import { parseLrc, parseAnyLyrics, formatTime, lrcLinesToString } from "../utils/lrc";
 import { defaultVisualConfig, mergeConfig } from "../utils/visualDefaults";
-import type { Project, LrcLine, VisualConfig } from "../types";
+import type { Project, LrcLine, VisualConfig, ProjectLayouts, SavedLayout } from "../types";
 import LyricVideoPreview from "../components/LyricVideoPreview";
 import VisualEditor from "../components/VisualEditor";
+import { migrateProjectLayouts, getActiveConfig, createLayout, duplicateLayout } from "../utils/layouts";
 
 const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 
@@ -19,6 +20,7 @@ export default function ProjectEditor() {
   const [project, setProject] = useState<Project | null>(null);
   const [lines, setLines] = useState<LrcLine[]>([]);
   const [cfg, setCfg] = useState<VisualConfig>(defaultVisualConfig);
+  const [layouts, setLayouts] = useState<ProjectLayouts | null>(null);
   const [tab, setTab] = useState<"editor" | "preview">("editor");
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [busy, setBusy] = useState("");
@@ -101,7 +103,10 @@ export default function ProjectEditor() {
     try {
       const p = await api.getProject(name);
       setProject(p);
-      setCfg(mergeConfig(defaultVisualConfig, p.visual_config));
+      // Multi-layout migration: if project has no layouts, create them
+      const projectLayouts = p.layouts || migrateProjectLayouts(p);
+      setLayouts(projectLayouts);
+      setCfg(getActiveConfig({ ...p, layouts: projectLayouts }));
       if (p.lrc_file) {
         try {
           const r = await api.getLrc(name);
@@ -247,8 +252,58 @@ export default function ProjectEditor() {
 
   const onCfgChange = (c: VisualConfig) => {
     setCfg(c);
+    // Update the active layout in the layouts state
+    if (layouts) {
+      const updated = { ...layouts, items: { ...layouts.items } };
+      const activeLayout = updated.items[updated.activeId];
+      if (activeLayout) {
+        updated.items[updated.activeId] = { ...activeLayout, config: c };
+        setLayouts(updated);
+      }
+    }
     if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(() => { if (name) api.updateProject(name, { visual_config: c }).catch(() => {}); }, 800);
+    saveTimer.current = setTimeout(() => {
+      if (name && layouts) {
+        // Save visual_config (backward compat) + layouts
+        const updatedLayouts = { ...layouts, items: { ...layouts.items } };
+        const al = updatedLayouts.items[updatedLayouts.activeId];
+        if (al) updatedLayouts.items[updatedLayouts.activeId] = { ...al, config: c };
+        api.updateProject(name, { visual_config: c, layouts: updatedLayouts }).catch(() => {});
+      }
+    }, 800);
+  };
+
+  // ─── Layout switching ─────────────────────────────────────────────
+  const switchLayout = (layoutId: string) => {
+    if (!layouts || !layouts.items[layoutId]) return;
+    const updated = { ...layouts, activeId: layoutId };
+    setLayouts(updated);
+    setCfg(mergeConfig(defaultVisualConfig, updated.items[layoutId].config));
+    // Do NOT reset audio time
+  };
+
+  const addLayout = (aspectRatio: string) => {
+    if (!layouts) return;
+    const names: Record<string, string> = { "16:9": "Landscape", "9:16": "Portrait", "1:1": "Square", "4:3": "Classic" };
+    const layout = createLayout(names[aspectRatio] || aspectRatio, aspectRatio);
+    const updated = {
+      ...layouts,
+      order: [...layouts.order, layout.id],
+      items: { ...layouts.items, [layout.id]: layout },
+    };
+    setLayouts(updated);
+    switchLayout(layout.id);
+  };
+
+  const deleteLayout = (layoutId: string) => {
+    if (!layouts || layouts.order.length <= 1) return;
+    const updated = { ...layouts, items: { ...layouts.items }, order: layouts.order.filter(id => id !== layoutId) };
+    delete updated.items[layoutId];
+    if (updated.activeId === layoutId) {
+      updated.activeId = updated.order[0];
+      setCfg(mergeConfig(defaultVisualConfig, updated.items[updated.activeId]?.config));
+    }
+    setLayouts(updated);
   };
 
   const upload = async (type: "audio" | "lyrics" | "cover", file: File) => {
@@ -405,9 +460,37 @@ export default function ProjectEditor() {
 
         {/* CENTER */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-          <div style={{ display: "flex", background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
+          {/* Layout selector + tabs */}
+          <div style={{ display: "flex", alignItems: "center", background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
             <TabBtn active={tab === "editor"} onClick={() => setTab("editor")}>Timing Editor</TabBtn>
             <TabBtn active={tab === "preview"} onClick={() => setTab("preview")}>Video Preview</TabBtn>
+            <div style={{ flex: 1 }} />
+            {/* Layout tabs */}
+            {layouts && (
+              <div style={{ display: "flex", alignItems: "center", gap: SP.xs, marginRight: SP.sm }}>
+                {layouts.order.map(id => {
+                  const l = layouts.items[id];
+                  if (!l) return null;
+                  const isActive = layouts.activeId === id;
+                  return (
+                    <button key={id} onClick={() => switchLayout(id)} style={{
+                      padding: `${SP.xs}px ${SP.sm}px`, borderRadius: SP.xs, border: "none", fontSize: 10,
+                      background: isActive ? "#6c5ce7" : "#1a1a28", color: isActive ? "#fff" : "#666",
+                      cursor: "pointer", whiteSpace: "nowrap",
+                    }}>
+                      {l.name} {l.aspectRatio}
+                    </button>
+                  );
+                })}
+                <button onClick={() => {
+                  const ar = prompt("Aspect ratio (16:9, 9:16, 1:1, 4:3):", "9:16");
+                  if (ar) addLayout(ar);
+                }} style={{
+                  padding: `${SP.xs}px ${SP.sm}px`, borderRadius: SP.xs, border: "1px solid #2a2a3a",
+                  background: "transparent", color: "#555", cursor: "pointer", fontSize: 10,
+                }}>+</button>
+              </div>
+            )}
           </div>
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
             <div style={{ position: "absolute", inset: 0, display: tab === "editor" ? "flex" : "none", flexDirection: "column" }}>

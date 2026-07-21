@@ -49,14 +49,20 @@ export function computeLayout(
   }
   lyricsX += cfg.lyrics.offsetX * sx;
 
+  // Lyrics height: for landscape, match cover height. For portrait/square,
+  // use remaining space below cover and title area.
+  const isPortrait = w < h;
+  const lyricsH = isPortrait
+    ? Math.max(h * 0.35, h - coverY - coverSize - 120 * sy) // remaining space below cover
+    : coverSize; // landscape: match cover height
+
   let lyricsY: number;
-  const lyricsH = coverSize; // match cover height as default bounding box
   if (cfg.lyrics.verticalAlign === "top") {
-    lyricsY = h * 0.1;
+    lyricsY = isPortrait ? coverY + coverSize + 80 * sy : h * 0.1;
   } else if (cfg.lyrics.verticalAlign === "bottom") {
-    lyricsY = h - h * 0.1 - lyricsH;
+    lyricsY = h - h * 0.05 - lyricsH;
   } else {
-    lyricsY = (h - lyricsH) / 2;
+    lyricsY = isPortrait ? coverY + coverSize + 80 * sy : (h - lyricsH) / 2;
   }
   lyricsY += cfg.lyrics.offsetY * sy;
 

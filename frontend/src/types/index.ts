@@ -8,6 +8,22 @@ export interface Project {
   cover_file: string | null;
   duration: number | null;
   visual_config?: VisualConfig;
+  // Multi-layout support
+  layouts?: ProjectLayouts;
+}
+
+export interface ProjectLayouts {
+  order: string[];
+  activeId: string;
+  items: Record<string, SavedLayout>;
+}
+
+export interface SavedLayout {
+  id: string;
+  name: string;
+  aspectRatio: string; // "16:9", "9:16", "1:1", "4:3", etc.
+  config: VisualConfig;
+  createdAt: string;
 }
 
 export interface LrcLine {
@@ -113,11 +129,11 @@ export interface VideoConfig {
 
 export interface LyricAnimationConfig {
   enabled: boolean;
-  activeColor: string;       // color for characters being sung
-  completedColor: string;    // color for lines already sung
-  inactiveColor: string;     // color for lines not yet sung
-  colorMode: "current-line" | "all-played"; // which lines get colored
-  transitionDuration: number; // seconds per line fill
+  activeColor: string;
+  completedColor: string;
+  inactiveColor: string;
+  colorMode: "current-line" | "all-played";
+  transitionDuration: number;
 }
 
 // --- Themes ---
