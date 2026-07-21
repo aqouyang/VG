@@ -7,13 +7,10 @@ import type { Project, LrcLine, VisualConfig } from "../types";
 import LyricVideoPreview from "../components/LyricVideoPreview";
 import VisualEditor from "../components/VisualEditor";
 
-// ─── Spacing constants ─────────────────────────────────────────────
 const SP = { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, xxl: 32 };
 
-// ─── Toast ─────────────────────────────────────────────────────────
 interface Toast { id: number; msg: string; type: "info" | "ok" | "err" }
 let _tid = 0;
-
 
 export default function ProjectEditor() {
   const { name } = useParams<{ name: string }>();
@@ -32,37 +29,22 @@ export default function ProjectEditor() {
   const [speed, setSpeed] = useState(1);
   const [autoAdvance, setAutoAdvance] = useState(true);
   const [undoStack, setUndoStack] = useState<LrcLine[][]>([]);
+  const [renderMode, setRenderMode] = useState<"auto" | "fast" | "record" | "advanced">("auto");
 
-
-  // ─── REFS ─────────────────────────────────────────────────────────
-  // The audio element ref is stable. It never changes once set.
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout>>();
   const linesRef = useRef(lines);
   linesRef.current = lines;
 
-  // ─── SEEKING STATE (all refs, no React state) ─────────────────────
-  //
-  // Architecture:
-  //   timeRef: the single authoritative playback position.
-  //   seekId:  increments on every seek. onTimeUpdate ignores events
-  //            that arrive during or shortly after a seek.
-  //   seekSettleTimer: blocks timeupdate for 200ms after each seek
-  //            to let the audio element settle at the new position.
-  //
-  // Root cause of the old "jump back" bug:
-  //   After onSliderUp cleared isSeeking, a queued timeupdate event
-  //   (reporting the PRE-SEEK position) fired and overwrote timeRef.
-  //   The new seekId system rejects ALL timeupdate events until the
-  //   audio element confirms it has reached near the seek target.
-  //
+  // ─── SEEKING: simple cooldown approach ────────────────────────────
+  // isSeeking: true while the user is dragging the slider.
+  // cooldown: a timestamp. timeupdate events are ignored until Date.now() > cooldown.
+  // This replaces the old seekTarget/seekId system which could lock permanently.
   const isSeeking = useRef(false);
   const wasPlaying = useRef(false);
   const timeRef = useRef(0);
-  const seekId = useRef(0);
-  const seekTarget = useRef<number | null>(null);
-  const seekSettleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seekCooldown = useRef(0); // Date.now() after which timeupdate is accepted
 
   const toast = useCallback((msg: string, type: Toast["type"] = "info") => {
     const id = ++_tid;
@@ -70,14 +52,10 @@ export default function ProjectEditor() {
     setTimeout(() => setToasts(p => p.filter(t => t.id !== id)), 3500);
   }, []);
 
-  // ─── AUDIO ELEMENT SETUP ──────────────────────────────────────────
-  // Use a callback ref so we can attach listeners the moment the
-  // audio element is created, and clean up when it's removed.
-  // This avoids all useEffect dependency issues.
+  // ─── AUDIO ELEMENT ────────────────────────────────────────────────
   const prevAudioEl = useRef<HTMLAudioElement | null>(null);
 
   const audioCallbackRef = useCallback((el: HTMLAudioElement | null) => {
-    // Clean up old element
     if (prevAudioEl.current && prevAudioEl.current !== el) {
       const old = prevAudioEl.current;
       old.removeEventListener("timeupdate", onTimeUpdate);
@@ -85,44 +63,23 @@ export default function ProjectEditor() {
       old.removeEventListener("pause", onPause);
       old.removeEventListener("ended", onEnded);
     }
-
     audioRef.current = el;
     prevAudioEl.current = el;
-
     if (!el) return;
-
-    // Restore position if we had one.
-    // Use seekTarget to block stale timeupdate events from the new element.
     if (timeRef.current > 0) {
-      seekTarget.current = timeRef.current;
       el.currentTime = timeRef.current;
+      seekCooldown.current = Date.now() + 500;
     }
-
     el.addEventListener("timeupdate", onTimeUpdate);
     el.addEventListener("play", onPlay);
     el.addEventListener("pause", onPause);
     el.addEventListener("ended", onEnded);
-  // These handlers are stable (defined below as module-level-ish refs)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Stable event handlers (use refs, never close over state)
   function onTimeUpdate(this: HTMLAudioElement) {
-    // Block 1: user is dragging the slider
     if (isSeeking.current) return;
-
-    // Block 2: a seek just happened and hasn't settled yet.
-    // After every seek, we set seekTarget and block timeupdate until
-    // the audio reports a position close to the target.
-    if (seekTarget.current !== null) {
-      const t = this.currentTime;
-      const target = seekTarget.current;
-      // Accept only if audio has reached within 0.5s of target
-      if (Math.abs(t - target) > 0.5) return;
-      // Audio has settled at the target. Clear the lock.
-      seekTarget.current = null;
-    }
-
+    if (Date.now() < seekCooldown.current) return;
     const t = this.currentTime;
     timeRef.current = t;
     setTime(t);
@@ -159,24 +116,21 @@ export default function ProjectEditor() {
         } catch {}
       }
     } catch (e: any) { toast("Load failed: " + e.message, "err"); }
-    // Restore position after reload
     if (savedTime > 0) {
-      // Use seekTarget to block stale events
-      seekTarget.current = savedTime;
       timeRef.current = savedTime;
       setTime(savedTime);
+      seekCooldown.current = Date.now() + 500;
       if (audioRef.current) audioRef.current.currentTime = savedTime;
     }
   }, [name, toast]);
 
   useEffect(() => { load(); }, [load]);
 
-  // ─── Playback speed ───────────────────────────────────────────────
   useEffect(() => {
     if (audioRef.current) audioRef.current.playbackRate = speed;
   }, [speed]);
 
-  // ─── Keyboard shortcuts ───────────────────────────────────────────
+  // Keyboard shortcuts
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -198,7 +152,6 @@ export default function ProjectEditor() {
     return () => window.removeEventListener("keydown", h);
   });
 
-  // Auto-scroll
   useEffect(() => {
     if (tab === "editor" && listRef.current && focus >= 0) {
       const el = listRef.current.children[focus] as HTMLElement;
@@ -206,46 +159,20 @@ export default function ProjectEditor() {
     }
   }, [focus, tab]);
 
-  // ─── SINGLE AUTHORITATIVE SEEK ─────────────────────────────────────
-  // Every seek in the entire component goes through this function.
-  // It sets the target, blocks stale timeupdate events, and syncs audio.
+  // ─── SEEK (single function, sets cooldown) ────────────────────────
   const performSeek = useCallback((t: number) => {
-    const a = audioRef.current;
-    seekId.current++;
-    seekTarget.current = t;
     timeRef.current = t;
     setTime(t);
-    if (a) {
-      a.currentTime = t;
-    }
+    seekCooldown.current = Date.now() + 300; // block stale events for 300ms
+    if (audioRef.current) audioRef.current.currentTime = t;
   }, []);
 
   const togglePlay = () => {
     const a = audioRef.current; if (!a) return;
     if (a.paused) {
-      // Set the audio position first, then wait for the browser to
-      // confirm the seek before starting playback. Without this,
-      // some browsers start playback from 0 if the seek hasn't
-      // completed when play() is called.
-      const target = timeRef.current;
-      performSeek(target);
-      if (Math.abs(a.currentTime - target) < 0.1) {
-        // Already at target, play immediately
-        a.play();
-      } else {
-        // Wait for the audio element to confirm the seek
-        const onSeeked = () => {
-          a.removeEventListener("seeked", onSeeked);
-          a.play();
-        };
-        a.addEventListener("seeked", onSeeked);
-        a.currentTime = target;
-        // Safety timeout in case seeked never fires
-        setTimeout(() => {
-          a.removeEventListener("seeked", onSeeked);
-          if (a.paused) a.play();
-        }, 300);
-      }
+      a.currentTime = timeRef.current;
+      seekCooldown.current = Date.now() + 200;
+      a.play();
     } else {
       a.pause();
     }
@@ -258,33 +185,18 @@ export default function ProjectEditor() {
     performSeek(Math.max(0, Math.min(a.duration || 0, timeRef.current + d)));
   };
 
-  // ─── SLIDER SEEKING ──────────────────────────────────────────────
-  // mouseup/touchend are attached to WINDOW so they fire even when
-  // the pointer is released outside the slider element. Without this,
-  // isSeeking stays true forever if the user drags off the slider.
+  // ─── SLIDER ───────────────────────────────────────────────────────
   const commitSeek = useCallback(() => {
-    const finalTime = timeRef.current;
-    performSeek(finalTime);
+    const t = timeRef.current;
+    performSeek(t);
     setTimeout(() => {
       isSeeking.current = false;
       const a = audioRef.current;
-      if (a) {
-        a.currentTime = finalTime;
-        if (wasPlaying.current) {
-          // Wait for seek to complete before resuming playback
-          const onSeeked = () => {
-            a.removeEventListener("seeked", onSeeked);
-            a.play();
-          };
-          a.addEventListener("seeked", onSeeked);
-          // Safety timeout
-          setTimeout(() => {
-            a.removeEventListener("seeked", onSeeked);
-            if (a.paused && wasPlaying.current) a.play();
-          }, 300);
-        }
+      if (a && wasPlaying.current) {
+        a.currentTime = t;
+        a.play();
       }
-    }, 150);
+    }, 100);
   }, [performSeek]);
 
   const onSliderDown = useCallback(() => {
@@ -292,7 +204,6 @@ export default function ProjectEditor() {
     const a = audioRef.current;
     wasPlaying.current = a ? !a.paused : false;
     if (a && !a.paused) a.pause();
-    // Attach release handler to window so it fires even if pointer leaves the slider
     const onUp = () => {
       window.removeEventListener("mouseup", onUp);
       window.removeEventListener("touchend", onUp);
@@ -304,8 +215,6 @@ export default function ProjectEditor() {
 
   const onSliderChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const v = parseFloat(e.target.value);
-    seekId.current++;
-    seekTarget.current = v;
     timeRef.current = v;
     setTime(v);
     if (audioRef.current) audioRef.current.currentTime = v;
@@ -336,14 +245,12 @@ export default function ProjectEditor() {
     toast(`Shifted ${d > 0 ? "+" : ""}${d.toFixed(1)}s`, "ok");
   };
 
-  // Config
   const onCfgChange = (c: VisualConfig) => {
     setCfg(c);
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => { if (name) api.updateProject(name, { visual_config: c }).catch(() => {}); }, 800);
   };
 
-  // Uploads
   const upload = async (type: "audio" | "lyrics" | "cover", file: File) => {
     if (!name) return;
     setBusy(`Uploading ${type}...`);
@@ -379,9 +286,6 @@ export default function ProjectEditor() {
     setLines(p => { const u = [...p]; u[i] = { ...u[i], time: parseInt(m[1]) * 60 + parseFloat(m[2]) }; return u; });
   };
 
-  // ─── Export ───────────────────────────────────────────────────────
-  const [renderMode, setRenderMode] = useState<"auto" | "fast" | "record" | "advanced">("auto");
-
   const doExport = async () => {
     if (!name) return;
     await api.updateProject(name, { visual_config: cfg });
@@ -392,7 +296,6 @@ export default function ProjectEditor() {
     } catch (e: any) { toast("Export failed: " + e.message, "err"); }
   };
 
-  // ─── Render ───────────────────────────────────────────────────────
   if (!project) return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100vh", background: "#0a0a0f", color: "#555" }}>Loading...</div>
   );
@@ -405,7 +308,6 @@ export default function ProjectEditor() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100vh", background: "#0a0a0f", color: "#ccc", overflow: "hidden" }}>
-
       {/* Top bar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: `${SP.sm}px ${SP.xl}px`, background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
         <button onClick={() => nav("/")} style={{ background: "none", border: "none", color: "#777", cursor: "pointer", fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
@@ -418,10 +320,8 @@ export default function ProjectEditor() {
       </div>
 
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
-
-        {/* ─── LEFT SIDEBAR ─── */}
+        {/* LEFT SIDEBAR */}
         <div style={{ width: 260, background: "#111118", borderRight: "1px solid #1c1c28", padding: SP.lg, overflowY: "auto", flexShrink: 0, display: "flex", flexDirection: "column", gap: SP.xl }}>
-
           <Panel title="Audio">
             {project.audio_file ? (
               <PanelInfo text={`${project.audio_file} (${project.duration?.toFixed(1)}s)`} ok />
@@ -429,7 +329,6 @@ export default function ProjectEditor() {
               <FileInput label="Upload audio" accept="audio/*" onFile={f => upload("audio", f)} />
             )}
           </Panel>
-
           <Panel title="Lyrics">
             {lines.length > 0 && (
               <div style={{ marginBottom: SP.md }}>
@@ -443,25 +342,19 @@ export default function ProjectEditor() {
               </div>
             )}
             <FileInput label="Upload lyrics (.txt / .lrc)" accept=".txt,.lrc" onFile={f => upload("lyrics", f)} />
-            {lines.length > 0 && (
-              <>
-                <PBtn onClick={saveLrc}>Save Timestamps</PBtn>
-                <PBtnGhost onClick={() => { pushUndo(); setLines(p => p.map(l => ({ ...l, time: -1 }))); setFocus(0); }}>Clear All</PBtnGhost>
-              </>
-            )}
+            {lines.length > 0 && (<>
+              <PBtn onClick={saveLrc}>Save Timestamps</PBtn>
+              <PBtnGhost onClick={() => { pushUndo(); setLines(p => p.map(l => ({ ...l, time: -1 }))); setFocus(0); }}>Clear All</PBtnGhost>
+            </>)}
           </Panel>
-
           <Panel title="Cover">
-            {coverUrl ? (
-              <>
-                <img src={coverUrl} alt="" style={{ width: "100%", borderRadius: SP.sm, marginBottom: SP.sm }} />
-                <FileInput label="Replace" accept="image/*" onFile={f => upload("cover", f)} small />
-              </>
-            ) : (
+            {coverUrl ? (<>
+              <img src={coverUrl} alt="" style={{ width: "100%", borderRadius: SP.sm, marginBottom: SP.sm }} />
+              <FileInput label="Replace" accept="image/*" onFile={f => upload("cover", f)} small />
+            </>) : (
               <FileInput label="Upload cover image" accept="image/*" onFile={f => upload("cover", f)} />
             )}
           </Panel>
-
           <Panel title="Export">
             <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.sm, flexWrap: "wrap" }}>
               {([["auto", "Auto"], ["fast", "Fast"], ["record", "Record"], ["advanced", "Exact"]] as const).map(([v, l]) => (
@@ -473,72 +366,53 @@ export default function ProjectEditor() {
             </div>
             <div style={{ fontSize: 10, color: "#555", marginBottom: SP.sm }}>
               {renderMode === "fast" ? "Fast compositing. Some transitions approximated." :
-               renderMode === "record" ? "Record preview. Preserves exact appearance. Takes about the video length." :
+               renderMode === "record" ? "Record preview. Preserves exact appearance." :
                renderMode === "advanced" ? "Frame by frame. Slower but visually exact." :
                "Auto selects the best mode."}
             </div>
             <PBtn onClick={doExport}>Export Video</PBtn>
             <PBtnGhost onClick={saveLrc}>Save Project</PBtnGhost>
           </Panel>
-
-          {/* Editor controls */}
           {tab === "editor" && (
             <div style={{ borderTop: "1px solid #1c1c28", paddingTop: SP.md }}>
               <label style={{ display: "flex", alignItems: "center", gap: SP.sm, fontSize: 12, color: "#888", cursor: "pointer", marginBottom: SP.md }}>
                 <input type="checkbox" checked={autoAdvance} onChange={e => setAutoAdvance(e.target.checked)} style={{ accentColor: "#6c5ce7" }} />
                 Auto-advance
               </label>
-
               <PanelLabel>Speed</PanelLabel>
               <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.lg }}>
                 {[0.5, 0.75, 1, 1.25, 1.5].map(s => (
-                  <button key={s} onClick={() => setSpeed(s)} style={{
-                    flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "none",
-                    background: speed === s ? "#6c5ce7" : "#1a1a28", color: speed === s ? "#fff" : "#666",
-                    fontSize: 11, cursor: "pointer",
-                  }}>{s}x</button>
+                  <button key={s} onClick={() => setSpeed(s)} style={{ flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "none", background: speed === s ? "#6c5ce7" : "#1a1a28", color: speed === s ? "#fff" : "#666", fontSize: 11, cursor: "pointer" }}>{s}x</button>
                 ))}
               </div>
-
-              {stamped > 0 && (
-                <>
-                  <PanelLabel>Shift All</PanelLabel>
-                  <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.lg }}>
-                    {[-1, -0.5, -0.1, 0.1, 0.5, 1].map(d => (
-                      <button key={d} onClick={() => shiftAll(d)} style={{
-                        flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs,
-                        border: "1px solid #2a2a3a", background: "transparent",
-                        color: "#888", fontSize: 10, cursor: "pointer",
-                      }}>{d > 0 ? "+" : ""}{d}</button>
-                    ))}
-                  </div>
-                </>
-              )}
-
+              {stamped > 0 && (<>
+                <PanelLabel>Shift All</PanelLabel>
+                <div style={{ display: "flex", gap: SP.xs, marginBottom: SP.lg }}>
+                  {[-1, -0.5, -0.1, 0.1, 0.5, 1].map(d => (
+                    <button key={d} onClick={() => shiftAll(d)} style={{ flex: 1, padding: `${SP.xs}px 0`, borderRadius: SP.xs, border: "1px solid #2a2a3a", background: "transparent", color: "#888", fontSize: 10, cursor: "pointer" }}>{d > 0 ? "+" : ""}{d}</button>
+                  ))}
+                </div>
+              </>)}
               <PanelLabel>Shortcuts</PanelLabel>
               <div style={{ fontSize: 11, color: "#444", lineHeight: 1.7 }}>
-                <SK k="Space" d="Play/Pause" /><SK k="Enter" d="Stamp" /><SK k="&#8593;&#8595;" d="Navigate" />
-                <SK k="&#8592;&#8594;" d="Skip 2s" /><SK k="[ ]" d="Nudge" /><SK k="Tab" d="Next untimed" />
-                <SK k="Ctrl+Z" d="Undo" /><SK k="Ctrl+&#9003;" d="Clear" />
+                <SK k="Space" d="Play/Pause" /><SK k="Enter" d="Stamp" /><SK k="Up/Down" d="Navigate" />
+                <SK k="Left/Right" d="Skip 2s" /><SK k="[ ]" d="Nudge" /><SK k="Tab" d="Next untimed" />
+                <SK k="Ctrl+Z" d="Undo" /><SK k="Ctrl+Bksp" d="Clear" />
               </div>
             </div>
           )}
         </div>
 
-        {/* ─── CENTER ─── */}
+        {/* CENTER */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ display: "flex", background: "#111118", borderBottom: "1px solid #1c1c28", flexShrink: 0 }}>
             <TabBtn active={tab === "editor"} onClick={() => setTab("editor")}>Timing Editor</TabBtn>
             <TabBtn active={tab === "preview"} onClick={() => setTab("preview")}>Video Preview</TabBtn>
           </div>
-
           <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-            {/* Editor */}
             <div style={{ position: "absolute", inset: 0, display: tab === "editor" ? "flex" : "none", flexDirection: "column" }}>
               <div ref={listRef} style={{ flex: 1, overflowY: "auto", padding: `${SP.sm}px ${SP.lg}px` }}>
-                {lines.length === 0 ? (
-                  <Empty text="Upload a lyrics file to start timing" />
-                ) : lines.map((line, i) => {
+                {lines.length === 0 ? <Empty text="Upload a lyrics file to start timing" /> : lines.map((line, i) => {
                   const foc = i === focus, act = i === activeLine, has = line.time >= 0;
                   return (
                     <div key={i} onClick={() => {
@@ -570,8 +444,6 @@ export default function ProjectEditor() {
                 })}
               </div>
             </div>
-
-            {/* Preview */}
             <div style={{ position: "absolute", inset: 0, display: tab === "preview" ? "flex" : "none", alignItems: "center", justifyContent: "center", background: "#060609" }}>
               {stampedLines.length > 0 ? (
                 <LyricVideoPreview project={project} lrcLines={stampedLines} currentTime={time} coverUrl={coverUrl} visualConfig={cfg} />
@@ -580,32 +452,26 @@ export default function ProjectEditor() {
               )}
             </div>
           </div>
-
-          {/* Audio bar (always rendered so the ref stays stable) */}
+          {/* Audio bar */}
           <div style={{ display: "flex", alignItems: "center", gap: SP.sm, padding: `${SP.sm}px ${SP.xl}px`, background: "#0c0c14", borderTop: "1px solid #1c1c28", flexShrink: 0, minHeight: 54 }}>
-            {audioUrl ? (
-              <>
-                <audio ref={audioCallbackRef} src={audioUrl} preload="auto" />
-                <button onClick={togglePlay} style={{
-                  width: 34, height: 34, borderRadius: "50%", border: "none",
-                  background: "#6c5ce7", color: "#fff", cursor: "pointer",
-                  display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0,
-                }}>{playing ? "\u275A\u275A" : "\u25B6"}</button>
-                <span style={{ fontFamily: "monospace", fontSize: 12, color: "#888", minWidth: 72 }}>{formatTime(time)}</span>
-                <input type="range" min={0} max={project.duration || 100} step={0.01} value={time}
-                  onChange={onSliderChange} onMouseDown={onSliderDown}
-                  onTouchStart={onSliderDown}
-                  style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }} />
-                <span style={{ fontFamily: "monospace", fontSize: 12, color: "#555", minWidth: 72 }}>{formatTime(project.duration || 0)}</span>
-                {speed !== 1 && <span style={{ fontSize: 11, color: "#6c5ce7", fontWeight: 600 }}>{speed}x</span>}
-              </>
-            ) : (
+            {audioUrl ? (<>
+              <audio ref={audioCallbackRef} src={audioUrl} preload="auto" />
+              <button onClick={togglePlay} style={{ width: 34, height: 34, borderRadius: "50%", border: "none", background: "#6c5ce7", color: "#fff", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, flexShrink: 0 }}>
+                {playing ? "\u275A\u275A" : "\u25B6"}
+              </button>
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#888", minWidth: 72 }}>{formatTime(time)}</span>
+              <input type="range" min={0} max={project.duration || 100} step={0.01} value={time}
+                onChange={onSliderChange} onMouseDown={onSliderDown} onTouchStart={onSliderDown}
+                style={{ flex: 1, accentColor: "#6c5ce7", cursor: "pointer", height: 4 }} />
+              <span style={{ fontFamily: "monospace", fontSize: 12, color: "#555", minWidth: 72 }}>{formatTime(project.duration || 0)}</span>
+              {speed !== 1 && <span style={{ fontSize: 11, color: "#6c5ce7", fontWeight: 600 }}>{speed}x</span>}
+            </>) : (
               <span style={{ color: "#444", fontSize: 12 }}>Upload audio to enable playback</span>
             )}
           </div>
         </div>
 
-        {/* ─── RIGHT PANEL ─── */}
+        {/* RIGHT PANEL */}
         <div style={{ width: 280, minWidth: 240, maxWidth: 320, background: "#111118", borderLeft: "1px solid #1c1c28", flexShrink: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: `${SP.sm}px ${SP.lg}px`, borderBottom: "1px solid #1c1c28", fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, fontWeight: 600 }}>
             Visual Settings
@@ -619,71 +485,47 @@ export default function ProjectEditor() {
       {/* Toasts */}
       <div style={{ position: "fixed", top: SP.lg, right: SP.lg, zIndex: 999, display: "flex", flexDirection: "column", gap: SP.sm }}>
         {toasts.map(t => (
-          <div key={t.id} style={{
-            padding: `${SP.sm}px ${SP.lg}px`, borderRadius: SP.sm, fontSize: 13, maxWidth: 320,
+          <div key={t.id} style={{ padding: `${SP.sm}px ${SP.lg}px`, borderRadius: SP.sm, fontSize: 13, maxWidth: 320,
             background: t.type === "ok" ? "#1a3a1a" : t.type === "err" ? "#3a1a1a" : "#1a1a3a",
             color: t.type === "ok" ? "#7ecf7e" : t.type === "err" ? "#cf7e7e" : "#9e9eff",
             border: `1px solid ${t.type === "ok" ? "#2a4a2a" : t.type === "err" ? "#4a2a2a" : "#2a2a4a"}`,
           }}>{t.msg}</div>
         ))}
       </div>
-
-      {/* Loading overlay */}
       {busy && (
         <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 998, color: "#888", fontSize: 14 }}>{busy}</div>
       )}
-
-      {/* Export progress is now in the global ExportDock component */}
     </div>
   );
 }
 
-// ─── Reusable components ─────────────────────────────────────────────
-
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
   return <div><PanelLabel>{title}</PanelLabel>{children}</div>;
 }
-
 function PanelLabel({ children }: { children: React.ReactNode }) {
   return <div style={{ fontSize: 10, color: "#555", textTransform: "uppercase", letterSpacing: 1.2, marginBottom: SP.sm, fontWeight: 600 }}>{children}</div>;
 }
-
 function PanelInfo({ text, ok }: { text: string; ok?: boolean }) {
   return <div style={{ fontSize: 12, color: ok ? "#6fcf70" : "#888", marginBottom: SP.sm }}>{text}</div>;
 }
-
 function FileInput({ label, accept, onFile, small }: { label: string; accept: string; onFile: (f: File) => void; small?: boolean }) {
-  return (
-    <label style={{
-      display: "block", background: "#0c0c16", border: "1px dashed #2a2a3a", borderRadius: SP.sm,
-      padding: small ? SP.sm : `${SP.md}px`, textAlign: "center", cursor: "pointer",
-      color: "#555", fontSize: 12, marginBottom: SP.sm,
-    }}>
-      {label}<input type="file" accept={accept} hidden onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} />
-    </label>
-  );
+  return <label style={{ display: "block", background: "#0c0c16", border: "1px dashed #2a2a3a", borderRadius: SP.sm, padding: small ? SP.sm : `${SP.md}px`, textAlign: "center", cursor: "pointer", color: "#555", fontSize: 12, marginBottom: SP.sm }}>{label}<input type="file" accept={accept} hidden onChange={e => e.target.files?.[0] && onFile(e.target.files[0])} /></label>;
 }
-
 function PBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return <button onClick={onClick} style={{ width: "100%", padding: `${SP.sm}px`, borderRadius: 6, border: "none", background: "#6c5ce7", color: "#fff", fontSize: 12, fontWeight: 500, cursor: "pointer", marginBottom: SP.sm }}>{children}</button>;
 }
-
 function PBtnGhost({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
-  return <button onClick={onClick} style={{ width: "100%", padding: `7px`, borderRadius: 6, border: "1px solid #2a2a3a", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", marginBottom: SP.sm }}>{children}</button>;
+  return <button onClick={onClick} style={{ width: "100%", padding: "7px", borderRadius: 6, border: "1px solid #2a2a3a", background: "transparent", color: "#888", fontSize: 12, cursor: "pointer", marginBottom: SP.sm }}>{children}</button>;
 }
-
 function TabBtn({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return <button onClick={onClick} style={{ padding: `${SP.sm}px ${SP.xl}px`, border: "none", background: "none", color: active ? "#fff" : "#666", fontSize: 13, fontWeight: 500, cursor: "pointer", borderBottom: active ? "2px solid #6c5ce7" : "2px solid transparent" }}>{children}</button>;
 }
-
 function NudgeBtn({ onClick, children }: { onClick: () => void; children: React.ReactNode }) {
   return <button onClick={e => { e.stopPropagation(); onClick(); }} style={{ background: "#1a1a28", border: "none", color: "#666", cursor: "pointer", borderRadius: 3, padding: "1px 5px", fontSize: 10 }}>{children}</button>;
 }
-
 function Empty({ text }: { text: string }) {
   return <div style={{ textAlign: "center", padding: 40, color: "#444", fontSize: 13 }}>{text}</div>;
 }
-
 function SK({ k, d }: { k: string; d: string }) {
   return <div><span style={{ color: "#6c5ce7", fontFamily: "monospace" }}>{k}</span> {d}</div>;
 }
