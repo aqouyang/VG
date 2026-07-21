@@ -67,11 +67,14 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
   const coverSrc = staticFile(`projects/${projectName}/assets/${coverFile}`);
   const shadowAlpha = cfg.cover.shadowIntensity;
 
-  // Scroll offset
+  // Scroll offset: position active line at vertical center of container.
+  // Clamp so content never scrolls completely out of view.
   const activeIdx = lyricState.activeLine;
-  let scrollOffset = activeIdx >= 0 ? activeIdx * spacing + spacing / 2 : 0;
   const totalH = lrcLines.length * spacing;
-  scrollOffset = Math.min(scrollOffset, Math.max(0, totalH - layout.lyrics.h / 2));
+  let targetY = activeIdx >= 0 ? activeIdx * spacing + spacing / 2 : 0;
+  const maxScroll = Math.max(0, totalH - layout.lyrics.h / 2);
+  targetY = Math.max(0, Math.min(targetY, maxScroll));
+  const scrollTranslateY = layout.lyrics.h / 2 - targetY;
 
   return (
     <AbsoluteFill style={{ backgroundColor: cfg.background.type === "solid" ? cfg.background.solidColor : "#0a0a0f" }}>
@@ -113,8 +116,9 @@ export const LyricVideo: React.FC<LyricVideoProps> = ({
         width: layout.lyrics.w, height: layout.lyrics.h,
         overflow: "hidden", opacity: lyricsOpacity,
       }}>
-        <div style={{ transform: `translateY(${layout.lyrics.h / 2 - scrollOffset}px)` }}>
+        <div style={{ transform: `translateY(${scrollTranslateY}px)` }}>
           {lyricState.lines.map(line => {
+            if (line.opacity <= 0) return <div key={line.index} style={{ height: spacing }} />;
             const fontSize = line.fontSize;
             const lineColor = !anim.enabled ? (line.isActive ? cfg.lyrics.activeColor : "#fff")
               : line.isPast ? anim.completedColor : anim.inactiveColor;

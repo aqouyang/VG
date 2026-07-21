@@ -622,18 +622,11 @@ def render_fast(
     shutil.copy2(ass_path, ass_local)
 
     # Use 'ass' filter (no original_size). Fall back to subtitles.
+    # Do NOT pass fontsdir with an absolute system path. libass finds
+    # system fonts automatically. If a specific font is needed, copy it
+    # to the work directory and use fontsdir=. (relative).
     filter_name = "ass" if has_ass_filter else "subtitles"
-    # Add fontsdir for libass to find system fonts (especially CJK)
-    if sys.platform == "win32":
-        fonts_dir = "C\\:/Windows/Fonts"
-    else:
-        fonts_dir = "/usr/share/fonts"
-    vf = f"{filter_name}=lyrics.ass:fontsdir={fonts_dir},format=yuv420p"
-
-    # Hard assertions: the filter must contain no absolute path components
-    for bad in ["original_size", "C:", "D:", "E:", "\\"]:
-        if bad in vf:
-            raise RuntimeError(f"Internal error: filter contains '{bad}': {vf}")
+    vf = f"{filter_name}=lyrics.ass,format=yuv420p"
 
     # All -i paths must be absolute (they are normal arguments, not filter values)
     cmd = [

@@ -25,9 +25,7 @@ function ColoredLine({ text, progress, activeColor, baseColor, style }: {
   const n = Math.floor(progress * chars.length);
   return (
     <div style={style}>
-      {chars.map((ch, i) => (
-        <span key={i} style={{ color: i < n ? activeColor : baseColor }}>{ch}</span>
-      ))}
+      {chars.map((ch, i) => <span key={i} style={{ color: i < n ? activeColor : baseColor }}>{ch}</span>)}
     </div>
   );
 }
@@ -46,29 +44,27 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
     inactiveColor: "#fff", colorMode: "current-line", transitionDuration: 2,
   };
 
-  // Use shared lyric state calculator
-  const lyricState = computeLyricState(currentTime, lrcLines, cfg, s);
+  const lyricState = computeLyricState(currentTime, lrcLines, cfg, s, project.duration ?? undefined);
   const shadowAlpha = cfg.cover.shadowIntensity;
   const spacing = cfg.lyrics.lineSpacing * s;
-
-  // Compute scroll offset to center the active line
-  const activeIdx = lyricState.activeLine;
-  let scrollOffset = 0;
-  if (activeIdx >= 0) {
-    // Sum spacing for lines before active
-    scrollOffset = activeIdx * spacing + spacing / 2;
-  }
-  // Clamp so we don't scroll past the end
-  const totalHeight = lrcLines.length * spacing;
   const containerH = layout.lyrics.h;
-  scrollOffset = Math.min(scrollOffset, Math.max(0, totalHeight - containerH / 2));
+
+  // Scroll: position active line at vertical center of container.
+  // Total content height = all lines * spacing.
+  // scrollOffset = how far to translate the inner div upward.
+  const totalContentH = lrcLines.length * spacing;
+  const activeIdx = lyricState.activeLine;
+  let targetY = activeIdx >= 0 ? activeIdx * spacing + spacing / 2 : 0;
+  // Clamp: don't scroll past the content
+  const maxScroll = Math.max(0, totalContentH - containerH / 2);
+  targetY = Math.max(0, Math.min(targetY, maxScroll));
+  const translateY = containerH / 2 - targetY;
 
   return (
     <div style={{
       width: previewW, height: previewH, position: "relative", overflow: "hidden", borderRadius: 8,
       background: cfg.background.type === "solid" ? cfg.background.solidColor : "#0a0a0f",
     }}>
-      {/* Background */}
       {cfg.background.type === "blurred-cover" && coverUrl && (
         <img src={coverUrl} alt="" style={{
           position: "absolute", inset: -30, width: "calc(100% + 60px)", height: "calc(100% + 60px)",
@@ -83,7 +79,6 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
       )}
 
       <div style={{ position: "relative", width: "100%", height: "100%", zIndex: 1 }}>
-        {/* Cover */}
         {coverUrl && (
           <div style={{
             position: "absolute", left: layout.cover.x, top: layout.cover.y,
@@ -95,7 +90,6 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
           </div>
         )}
 
-        {/* Title and artist */}
         <div style={{
           position: "absolute",
           left: layout.title.textAlign === "right" ? undefined : layout.title.textAlign === "center" ? 0 : layout.title.x,
@@ -111,16 +105,17 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
         {/* Lyrics */}
         <div style={{
           position: "absolute", left: layout.lyrics.x, top: layout.lyrics.y,
-          width: layout.lyrics.w, height: layout.lyrics.h, overflow: "hidden",
+          width: layout.lyrics.w, height: containerH, overflow: "hidden",
         }}>
           <div style={{
+            transform: `translateY(${translateY}px)`,
             transition: `transform ${cfg.lyrics.scrollSpeed}s ease`,
-            transform: `translateY(${containerH / 2 - scrollOffset}px)`,
           }}>
             {lyricState.lines.map(line => {
-              const fontSize = line.fontSize;
+              if (line.opacity <= 0) return (
+                <div key={line.index} style={{ height: spacing }} />
+              );
               const lineColor = _getColor(line, anim, cfg);
-
               return (
                 <div key={line.index} style={{
                   minHeight: spacing, display: "flex", alignItems: "center",
@@ -128,24 +123,21 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
                   transition: `opacity ${cfg.lyrics.scrollSpeed}s ease`,
                 }}>
                   {anim.enabled && line.isActive && line.fillProgress > 0 ? (
-                    <ColoredLine
-                      text={line.text} progress={line.fillProgress}
+                    <ColoredLine text={line.text} progress={line.fillProgress}
                       activeColor={anim.activeColor} baseColor={anim.inactiveColor}
                       style={{
-                        fontSize, fontWeight: line.fontWeight, fontFamily: cfg.lyrics.fontFamily,
-                        lineHeight: 1.5, letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
+                        fontSize: line.fontSize, fontWeight: line.fontWeight,
+                        fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
+                        letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
                         textAlign: cfg.lyrics.textAlign as any, width: "100%",
-                      }}
-                    />
+                      }} />
                   ) : (
                     <div style={{
-                      color: lineColor, fontSize, fontWeight: line.fontWeight,
+                      color: lineColor, fontSize: line.fontSize, fontWeight: line.fontWeight,
                       fontFamily: cfg.lyrics.fontFamily, lineHeight: 1.5,
                       letterSpacing: (cfg.lyrics.letterSpacing ?? 0) * s,
                       textAlign: cfg.lyrics.textAlign as any, width: "100%",
-                    }}>
-                      {line.text}
-                    </div>
+                    }}>{line.text}</div>
                   )}
                 </div>
               );
@@ -157,11 +149,8 @@ export default function LyricVideoPreview({ project, lrcLines, currentTime, cove
   );
 }
 
-function _getColor(line: ReturnType<typeof computeLyricState>["lines"][0], anim: LyricAnimationConfig, cfg: VisualConfig): string {
-  if (!anim.enabled) {
-    return line.isActive ? cfg.lyrics.activeColor : "#fff";
-  }
+function _getColor(line: { isActive: boolean; isPast: boolean }, anim: LyricAnimationConfig, cfg: VisualConfig): string {
+  if (!anim.enabled) return line.isActive ? cfg.lyrics.activeColor : "#fff";
   if (line.isPast) return anim.completedColor;
-  if (line.isActive) return anim.inactiveColor; // base for karaoke fill
   return anim.inactiveColor ?? "#fff";
 }
