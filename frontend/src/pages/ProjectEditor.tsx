@@ -356,7 +356,9 @@ export default function ProjectEditor() {
   );
 
   const audioUrl = project.audio_file ? `/static/projects/${name}/audio/${project.audio_file}` : null;
-  const coverUrl = project.cover_file ? `/static/projects/${name}/assets/${project.cover_file}` : null;
+  const coverUrl = project.cover_file
+    ? `/static/projects/${name}/assets/${project.cover_file}?v=${project.cover_version ?? 0}`
+    : null;
   const stamped = lines.filter(l => l.time >= 0).length;
   const stampedLines = lines.filter(l => l.time >= 0);
   const lineDur = (i: number) => { if (lines[i].time < 0) return ""; const n = lines.slice(i + 1).find(l => l.time >= 0); return n ? (n.time - lines[i].time).toFixed(1) + "s" : ""; };

@@ -244,9 +244,11 @@ async def upload_cover(name: str, file: UploadFile = File(...)):
 
     data = load_project_json(name)
     data["cover_file"] = f"cover{ext}"
+    # Increment asset version to bust browser cache
+    data["cover_version"] = data.get("cover_version", 0) + 1
     save_project_json(name, data)
 
-    return {"cover_file": data["cover_file"]}
+    return {"cover_file": data["cover_file"], "cover_version": data["cover_version"]}
 
 
 @router.get("/{name}/lrc")

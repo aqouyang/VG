@@ -6,6 +6,7 @@ export interface Project {
   lyrics_file: string | null;
   lrc_file: string | null;
   cover_file: string | null;
+  cover_version?: number;
   duration: number | null;
   visual_config?: VisualConfig;
   // Multi-layout support
